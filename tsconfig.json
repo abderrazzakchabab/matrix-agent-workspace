@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "apps/control-plane/src/**/*.ts",
+    "apps/control-plane/src/**/*.tsx",
+    "apps/control-plane/test/**/*.ts",
+    "packages/contracts/src/**/*.ts",
+    "packages/contracts/test/**/*.ts"
+  ]
+}

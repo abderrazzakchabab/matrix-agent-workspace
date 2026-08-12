@@ -51,7 +51,7 @@ export const RunEvent = z.object({
   version: z.number().int().positive(),
   occurredAt: z.string().datetime(),
   visibility: z.enum(['room_and_owner']),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 export type RunEventType = z.infer<typeof RunEvent>;

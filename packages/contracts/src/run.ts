@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const RunRequest = z.object({
   prompt: z.string().min(1, 'Prompt must not be empty'),
   mode: z.enum(['parallel', 'sequential'], {
-    errorMap: () => ({ message: 'Mode must be "parallel" or "sequential"' }),
+    message: 'Mode must be "parallel" or "sequential"',
   }),
   specialistIds: z.array(z.string().min(1)).min(1, 'At least one specialist is required'),
   roomId: z.string().min(1).optional(),

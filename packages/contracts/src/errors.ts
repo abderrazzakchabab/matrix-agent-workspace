@@ -6,7 +6,7 @@ export const ApiError = z.object({
     code: z.string().min(1),
     message: z.string().min(1),
     requestId: z.string().min(1),
-    details: z.record(z.unknown()).optional(),
+    details: z.record(z.string(), z.unknown()).optional(),
   }),
 });
 
