@@ -1,0 +1,17 @@
+{
+  "name": "matrix-agent-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:foundation": "vitest run apps/control-plane/test/health.route.test.ts packages/contracts/test/contracts.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}

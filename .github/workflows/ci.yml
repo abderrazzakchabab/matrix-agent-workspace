@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Contracts and health tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Run contract and health tests
+        run: pnpm test:foundation
+
+  vector-fixture:
+    name: PostgreSQL pgvector fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start PostgreSQL with pgvector
+        run: docker compose -f infra/docker-compose.test.yml up -d postgres
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose -f infra/docker-compose.test.yml exec -T postgres pg_isready -U matrix -d matrix_test; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready in time"
+          exit 1
+
+      - name: Verify vector extension exists
+        run: |
+          docker compose -f infra/docker-compose.test.yml exec -T postgres psql -U matrix -d matrix_test -c "SELECT extname FROM pg_extension WHERE extname = 'vector';"
