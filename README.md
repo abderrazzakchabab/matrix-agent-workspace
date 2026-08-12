@@ -8,4 +8,4 @@ A staged project for a Matrix mobile client backed by configurable Vercel-hosted
 2. Mobile Matrix client.
 3. GitHub collaboration workspace with write actions.
 
-The approved phase-B design is documented in `docs/superpowers/specs/`.
+The implementation plan is at `docs/superpowers/plans/2026-08-12-matrix-agent-workspace.md`.
