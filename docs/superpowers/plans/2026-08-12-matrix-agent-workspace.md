@@ -47,6 +47,10 @@ All JSON responses include `requestId`; all errors use `{ "error": { "code": str
   - Request: `{ "workspaceId": "ws_123" }`
   - `201`: `{ "roomId": "!room:example.test", "workspaceId": "ws_123", "boundBy": "@alice:example.test" }`
   - `403 ROOM_MEMBERSHIP_REQUIRED` if Synapse membership verification fails.
+- `POST /api/workspaces`
+  - Request: `{ "name": "My Workspace", "policy": { "readOnly": true } }`
+  - `201`: `{ "workspaceId": "ws_123", "name": "My Workspace", "ownerId": "@alice:example.test", "status": "active", "createdAt": "2026-08-12T12:00:00Z" }`
+  - `401` if the session is missing or invalid.
 - `POST /api/workspaces/:workspaceId/runs`
   - Request: `{ "roomId": "!room:example.test", "prompt": "Summarize the open issues", "mode": "parallel", "specialistIds": ["repo-reader", "issue-reader"], "githubContext": { "repository": "acme/widget" } }`
   - `202`: `{ "runId": "run_123", "status": "queued", "roomId": "!room:example.test", "nextSequence": 1 }`
@@ -154,8 +158,9 @@ The following tasks are the first implementation stream. They are intentionally 
 - Create: `apps/control-plane/src/auth/matrix-token.ts`, `apps/control-plane/src/auth/session-service.ts`, `apps/control-plane/src/auth/authorization.ts`
 - Create: `apps/control-plane/src/app/api/auth/matrix/session/route.ts`, `apps/control-plane/src/app/api/auth/session/route.ts`
 - Create: `apps/control-plane/src/app/api/rooms/route.ts`, `apps/control-plane/src/app/api/rooms/[roomId]/binding/route.ts`
+- Create: `apps/control-plane/src/app/api/workspaces/route.ts`
 - Create: `apps/control-plane/src/db/client.ts`, `apps/control-plane/src/db/schema/users.ts`, `apps/control-plane/src/db/schema/sessions.ts`, `apps/control-plane/src/db/schema/rooms.ts`, `apps/control-plane/src/db/schema/workspaces.ts`, `apps/control-plane/src/db/migrations/0001_identity_and_bindings.sql`
-- Create: `apps/control-plane/test/auth/matrix-session.test.ts`, `apps/control-plane/test/auth/room-binding.test.ts`, `apps/control-plane/test/auth/rls-ownership.test.ts`
+- Create: `apps/control-plane/test/auth/matrix-session.test.ts`, `apps/control-plane/test/auth/room-binding.test.ts`, `apps/control-plane/test/auth/rls-ownership.test.ts`, `apps/control-plane/test/auth/workspace-creation.test.ts`
 - Modify: `infra/docker-compose.test.yml` to add a Synapse fixture; create `infra/synapse/homeserver.yaml`, `tests/fixtures/synapse/seed.sh`
 - Modify: `.gitignore` to add `infra/synapse/runtime/` so generated homeserver key material is never committed. The Synapse service must mount `infra/synapse/runtime` and set `signing_key_path: /data/runtime/example.test.signing.key` in `homeserver.yaml`; the key is generated at fixture startup, not stored in the repository.
 
@@ -165,12 +170,15 @@ The following tasks are the first implementation stream. They are intentionally 
   expect(response.status).toBe(200);
   expect(response.headers.get("set-cookie")).toContain("HttpOnly");
   expect((await postMatrixSession({ accessToken: "syt_bad" })).body.error.code).toBe("MATRIX_TOKEN_INVALID");
+  const ws = await postWorkspace({ name: "Test Workspace" });
+  expect(ws.body).toMatchObject({ name: "Test Workspace", status: "active" });
+  expect((await postWorkspaceAsAnonymous({ name: "x" })).status).toBe(401);
   expect((await bindRoomAs("@bob:example.test", "!alice:example.test"))).toMatchObject({ status: 403 });
   ```
-- [ ] **Step 2: Run the focused red tests.** Run `pnpm vitest run apps/control-plane/test/auth/matrix-session.test.ts apps/control-plane/test/auth/room-binding.test.ts apps/control-plane/test/auth/rls-ownership.test.ts`. Expected: FAIL with `Cannot find module .../auth/session-service` (the behavior is absent).
-- [ ] **Step 3: Implement minimally.** Add Synapse Client-Server API calls to `/_matrix/client/v3/account/whoami` and room-membership lookup; hash opaque session IDs for lookup; define and consume the `TokenCipher` interface in `apps/control-plane/src/auth/matrix-token.ts` with an injected fixture cipher for these tests; add session middleware, ownership checks, room binding route, and migrations with RLS policies keyed by `app.user_id`/`app.workspace_ids`. Task 3 must replace the fixture cipher with the production AES implementation before deployment. Do not accept a client-supplied Matrix user ID as identity.
-- [ ] **Step 4: Verify green and the Synapse fixture.** Generate the signing key into the ignored runtime path first: `mkdir -p infra/synapse/runtime && docker compose -f infra/docker-compose.test.yml run --rm --entrypoint sh synapse -c 'test -f /data/runtime/example.test.signing.key || generate_signing_key.py -o /data/runtime/example.test.signing.key'`; expected: the file exists under `infra/synapse/runtime/` and `git status --porcelain infra/synapse` reports nothing. Then run `docker compose -f infra/docker-compose.test.yml up -d postgres synapse && docker compose -f infra/docker-compose.test.yml exec -T synapse /tests/fixtures/synapse/seed.sh`; expected: `seeded @alice:example.test and !room:example.test`. Run the three Vitest files; expected: all tests pass, including `MATRIX_TOKEN_INVALID`, `ROOM_MEMBERSHIP_REQUIRED`, and cross-tenant denial assertions.
-- [ ] **Step 5: Commit the focused auth boundary.** Run `git add apps/control-plane/src/auth apps/control-plane/src/app/api/auth apps/control-plane/src/app/api/rooms apps/control-plane/src/db infra/docker-compose.test.yml infra/synapse .gitignore apps/control-plane/test/auth && git commit -m "feat: authenticate Matrix users and bind rooms explicitly"`.
+- [ ] **Step 2: Run the focused red tests.** Run `pnpm vitest run apps/control-plane/test/auth/matrix-session.test.ts apps/control-plane/test/auth/room-binding.test.ts apps/control-plane/test/auth/rls-ownership.test.ts apps/control-plane/test/auth/workspace-creation.test.ts`. Expected: FAIL with `Cannot find module .../auth/session-service` (the behavior is absent).
+- [ ] **Step 3: Implement minimally.** Add Synapse Client-Server API calls to `/_matrix/client/v3/account/whoami` and room-membership lookup; hash opaque session IDs for lookup; define and consume the `TokenCipher` interface in `apps/control-plane/src/auth/matrix-token.ts` with an injected fixture cipher for these tests; add session middleware, ownership checks, workspace creation route, room binding route, and migrations with RLS policies keyed by `app.user_id`/`app.workspace_ids`. Task 3 must replace the fixture cipher with the production AES implementation before deployment. Do not accept a client-supplied Matrix user ID as identity.
+- [ ] **Step 4: Verify green and the Synapse fixture.** Generate the signing key into the ignored runtime path first: `mkdir -p infra/synapse/runtime && docker compose -f infra/docker-compose.test.yml run --rm --entrypoint sh synapse -c 'test -f /data/runtime/example.test.signing.key || generate_signing_key.py -o /data/runtime/example.test.signing.key'`; expected: the file exists under `infra/synapse/runtime/` and `git status --porcelain infra/synapse` reports nothing. Then run `docker compose -f infra/docker-compose.test.yml up -d postgres synapse && docker compose -f infra/docker-compose.test.yml exec -T synapse /tests/fixtures/synapse/seed.sh`; expected: `seeded @alice:example.test and !room:example.test`. Run the four Vitest files; expected: all tests pass, including `MATRIX_TOKEN_INVALID`, `ROOM_MEMBERSHIP_REQUIRED`, workspace creation, and cross-tenant denial assertions.
+- [ ] **Step 5: Commit the focused auth boundary.** Run `git add apps/control-plane/src/auth apps/control-plane/src/app/api/auth apps/control-plane/src/app/api/rooms apps/control-plane/src/app/api/workspaces apps/control-plane/src/db infra/docker-compose.test.yml infra/synapse .gitignore apps/control-plane/test/auth && git commit -m "feat: authenticate Matrix users, create workspaces, and bind rooms explicitly"`.
 
 ### Task 3: PostgreSQL entities, pgvector memory, token encryption, and redaction
 
