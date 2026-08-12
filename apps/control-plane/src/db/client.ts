@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { Pool, type PoolClient } from 'pg';
 
 /**
@@ -95,16 +95,19 @@ export function splitSqlStatements(sql: string): string[] {
   return statements;
 }
 
-/** Apply the identity/bindings migration (idempotent) using the owner role. */
+/** Apply every SQL migration in order (idempotent) using the owner role. */
 export async function runMigrations(): Promise<void> {
-  const sql = await readFile(
-    new URL('./migrations/0001_identity_and_bindings.sql', import.meta.url),
-    'utf8',
-  );
+  const migrationsDir = new URL('./migrations/', import.meta.url);
+  const files = (await readdir(migrationsDir))
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
   const client = await getAdminPool().connect();
   try {
-    for (const statement of splitSqlStatements(sql)) {
-      await client.query(statement);
+    for (const file of files) {
+      const sql = await readFile(new URL(`./migrations/${file}`, import.meta.url), 'utf8');
+      for (const statement of splitSqlStatements(sql)) {
+        await client.query(statement);
+      }
     }
   } finally {
     client.release();
