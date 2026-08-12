@@ -20,5 +20,8 @@ Thumbs.db
 # Testing
 coverage/
 
+# Synapse fixture runtime (generated signing keys and state — never committed)
+infra/synapse/runtime/
+
 # pnpm
 pnpm-lock.yaml

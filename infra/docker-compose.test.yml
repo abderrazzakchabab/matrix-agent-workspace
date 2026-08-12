@@ -16,3 +16,29 @@ services:
       timeout: 5s
       retries: 10
       start_period: 3s
+
+  synapse:
+    image: matrixdotorg/synapse:v1.158.0
+    container_name: matrix-test-synapse
+    environment:
+      SYNAPSE_SERVER_NAME: example.test
+      SYNAPSE_REPORT_STATS: 'no'
+    ports:
+      - '8008:8008'
+    volumes:
+      - ./synapse/homeserver.yaml:/data/homeserver.yaml:ro
+      - ./synapse/runtime:/data/runtime
+      - ../tests/fixtures/synapse:/tests/fixtures/synapse:ro
+    # Generate signing key material at fixture startup only, under the ignored
+    # host path infra/synapse/runtime/. No key material is committed.
+    entrypoint: >
+      sh -c 'test -f /data/runtime/example.test.signing.key ||
+             generate_signing_key -o /data/runtime/example.test.signing.key;
+             chown -R 991:991 /data/runtime;
+             exec /start.py'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:8008/_matrix/client/versions || exit 1']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s

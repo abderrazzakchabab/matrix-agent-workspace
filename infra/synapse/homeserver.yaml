@@ -1,0 +1,60 @@
+# Test-fixture Synapse configuration. Serves the Client-Server API only and
+# keeps all mutable state under /data. The signing key is generated at fixture
+# startup under the ignored infra/synapse/runtime/ path.
+server_name: "example.test"
+
+pid_file: /data/runtime/homeserver.pid
+
+# Generated at fixture startup; never committed.
+signing_key_path: "/data/runtime/example.test.signing.key"
+
+media_store_path: "/data/runtime/media_store"
+
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    resources:
+      - names: [client, federation]
+        compress: false
+
+database:
+  name: sqlite3
+  args:
+    database: /data/runtime/homeserver.db
+
+report_stats: false
+enable_registration: false
+
+# Allows the seed script to create users via `register_new_matrix_user`.
+registration_shared_secret: "test-registration-shared-secret"
+
+# Relax login/registration/message/join rate limits: this is a disposable test
+# fixture, and the four integration test files each create users and a room.
+rc_login:
+  address:
+    per_second: 100
+    burst_count: 100
+  account:
+    per_second: 100
+    burst_count: 100
+rc_registration:
+  per_second: 100
+  burst_count: 100
+rc_message:
+  per_second: 100
+  burst_count: 100
+rc_joins:
+  local:
+    per_second: 100
+    burst_count: 100
+  remote:
+    per_second: 100
+    burst_count: 100
+rc_joins_per_room:
+  per_second: 100
+  burst_count: 100
+
+# Do not attempt federation during tests.
+trusted_key_servers: []
