@@ -158,7 +158,12 @@ CREATE POLICY room_bindings_select ON room_bindings FOR SELECT
 
 DROP POLICY IF EXISTS room_bindings_insert ON room_bindings;
 CREATE POLICY room_bindings_insert ON room_bindings FOR INSERT
-  WITH CHECK (user_id = app_user_id());
+  WITH CHECK (user_id = app_user_id() AND workspace_id = ANY (app_workspace_ids()));
+
+DROP POLICY IF EXISTS room_bindings_update ON room_bindings;
+CREATE POLICY room_bindings_update ON room_bindings FOR UPDATE
+  USING (user_id = app_user_id())
+  WITH CHECK (user_id = app_user_id() AND workspace_id = ANY (app_workspace_ids()));
 
 DROP POLICY IF EXISTS room_bindings_delete ON room_bindings;
 CREATE POLICY room_bindings_delete ON room_bindings FOR DELETE
@@ -175,13 +180,12 @@ AS $$
 DECLARE
   v_id text;
 BEGIN
-  SELECT id INTO v_id FROM users
-   WHERE matrix_user_id = p_matrix_user_id AND homeserver_url = p_homeserver_url;
-  IF v_id IS NULL THEN
-    v_id := 'usr_' || gen_random_uuid()::text;
-    INSERT INTO users (id, matrix_user_id, homeserver_url)
-    VALUES (v_id, p_matrix_user_id, p_homeserver_url);
-  END IF;
+  v_id := 'usr_' || gen_random_uuid()::text;
+  INSERT INTO users (id, matrix_user_id, homeserver_url)
+  VALUES (v_id, p_matrix_user_id, p_homeserver_url)
+  ON CONFLICT (homeserver_url, matrix_user_id) DO UPDATE
+    SET updated_at = now()
+  RETURNING id INTO v_id;
   RETURN v_id;
 END;
 $$;
