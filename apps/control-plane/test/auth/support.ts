@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE } from '../../src/auth/session-service';
 import { getSynapseBaseUrl } from '../../src/auth/matrix-token';
 import { getPool, getAdminPool, runMigrations } from '../../src/db/client';
@@ -115,7 +115,7 @@ export async function postMatrixSession(opts: {
   homeserverUrl?: string;
   accessToken: string;
   userId?: string;
-}): Promise<Response> {
+}): Promise<NextResponse> {
   const req = jsonRequest('/api/auth/matrix/session', 'POST', {
     homeserverUrl: opts.homeserverUrl ?? SYNAPSE_BASE_URL,
     accessToken: opts.accessToken,
@@ -128,7 +128,7 @@ export async function postWorkspace(opts: {
   name: string;
   policy?: Record<string, unknown>;
   cookie?: string;
-}): Promise<Response> {
+}): Promise<NextResponse> {
   const req = jsonRequest(
     '/api/workspaces',
     'POST',
@@ -142,7 +142,7 @@ export async function bindRoom(
   roomId: string,
   workspaceId: string,
   cookie: string,
-): Promise<Response> {
+): Promise<NextResponse> {
   const req = jsonRequest(
     `/api/rooms/${encodeURIComponent(roomId)}/binding`,
     'POST',
@@ -152,16 +152,16 @@ export async function bindRoom(
   return bindRoomHandler(req, { params: Promise.resolve({ roomId }) });
 }
 
-export async function getRooms(cookie: string): Promise<Response> {
+export async function getRooms(cookie: string): Promise<NextResponse> {
   return getRoomsHandler(jsonRequest('/api/rooms', 'GET', undefined, cookie));
 }
 
-export async function deleteSession(cookie: string): Promise<Response> {
+export async function deleteSession(cookie: string): Promise<NextResponse> {
   return deleteSessionHandler(jsonRequest('/api/auth/session', 'DELETE', undefined, cookie));
 }
 
 /** Extract the `matrix_session=<value>` cookie header value from a Set-Cookie. */
-export function sessionCookie(res: Response): string {
+export function sessionCookie(res: NextResponse): string {
   const setCookie = res.headers.get('set-cookie') ?? '';
   const match = new RegExp(`(${SESSION_COOKIE}=[^;]+)`).exec(setCookie);
   if (!match) throw new Error(`no ${SESSION_COOKIE} cookie in Set-Cookie: ${setCookie}`);
