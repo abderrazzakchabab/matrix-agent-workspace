@@ -12,7 +12,8 @@ export function getSynapseBaseUrl(): string {
 
 /**
  * Encrypted token envelope. Production encryption is AES-256-GCM via
- * `security/envelope-encryption.ts`; Task 2 auth still uses the fixture cipher.
+ * `security/envelope-encryption.ts`; the session service uses that cipher by
+ * default, while the fixture cipher below remains available for test injection.
  */
 export interface EncryptedToken {
   ciphertext: string;
@@ -27,9 +28,9 @@ export interface TokenCipher {
 }
 
 /**
- * Task 2 fixture cipher. Reversible and non-cryptographic; still the default
- * session cipher. `security/envelope-encryption.ts` provides the production
- * AES-256-GCM cipher, which must replace this before deployment.
+ * Reversible, non-cryptographic fixture cipher used only by tests via explicit
+ * injection. Production sessions use the AES-256-GCM envelope cipher from
+ * `security/envelope-encryption.ts`, wired in `session-service.getTokenCipher`.
  */
 export function createFixtureTokenCipher(): TokenCipher {
   return {
