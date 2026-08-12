@@ -259,8 +259,8 @@ The following tasks are the first implementation stream. They are intentionally 
 ### Task 7: Phase B backend end-to-end gate
 
 **Files:**
-- Create: `apps/control-plane/test/e2e/phase-b-backend.spec.ts`, `tests/fixtures/model/server.ts`, `tests/fixtures/github/server.ts`, `tests/fixtures/synapse/seed.sh`
-- Modify: `package.json`, `playwright.config.ts`, `infra/docker-compose.test.yml`
+- Create: `apps/control-plane/test/e2e/phase-b-backend.spec.ts`, `tests/fixtures/model/server.ts`, `tests/fixtures/github/server.ts`
+- Modify: `package.json`, `playwright.config.ts`, `infra/docker-compose.test.yml`, `tests/fixtures/synapse/seed.sh`
 
 - [ ] **Step 1: Write the failing acceptance test first.** The Playwright/API test must log in as seeded `@alice:example.test`, bind `!alice:example.test` to a workspace, launch both `parallel` and `sequential` runs, assert specialist ordering/results, reconnect SSE from a saved sequence, observe Matrix progress and exactly one terminal message, read a repository, issue, and PR, and assert mutation routes are unavailable.
   ```ts
@@ -270,7 +270,7 @@ The following tasks are the first implementation stream. They are intentionally 
   expect(await waitForTerminal(parallel)).toMatchObject({ status: "completed" });
   expect(await reconnect(parallel, 3)).toHaveNoDuplicateSequences();
   expect(matrixFixture.terminalMessages(parallel.runId)).toHaveLength(1);
-  expect((await request.post(`/api/runs/${parallel.runId}/github/mutations`)).status()).toBe(404);
+  expect((await request.post(`/api/workspaces/ws_alice/github/mutations`)).status()).toBe(404);
   ```
 - [ ] **Step 2: Run red.** Run `docker compose -f infra/docker-compose.test.yml up -d && pnpm exec playwright test apps/control-plane/test/e2e/phase-b-backend.spec.ts`; Expected: FAIL at the first missing route or workflow result, not an infrastructure-only failure.
 - [ ] **Step 3: Implement the minimum integration wiring.** Add only the Next.js/Inngest test endpoints and fixture startup needed to connect the already tested services; make seeded IDs and model/GitHub responses deterministic. Keep Phase B free of mutation commands and collaboration UI.
@@ -374,7 +374,7 @@ Only begin after Phase A passes. This phase is the first place where GitHub writ
 
 **Files:**
 - Create: `apps/mobile/src/screens/GitHubWorkspaceScreen.tsx`, `apps/mobile/src/components/GitHubReadPanel.tsx`, `apps/mobile/src/components/MutationConfirmation.tsx`, `apps/mobile/src/components/AuditHistory.tsx`
-- Create: `apps/mobile/test/screens/github-read-panel.test.tsx`, `apps/mobile/test/components/mutation-confirmation.test.tsx`, `apps/mobile/test/components/audit-history.test.tsx`
+- Create: `apps/mobile/test/screens/github-read-panel.test.tsx`, `apps/mobile/test/components/mutation-confirmation.test.tsx`, `apps/mobile/test/components/audit-history.test.tsx`, `apps/mobile/test/screens/github-workspace.e2e.tsx`
 - Modify: `apps/mobile/src/navigation/RootNavigator.tsx`, `apps/mobile/src/api/control-plane.ts`
 
 - [ ] **Step 1: Write the failing tests first.** Assert the workspace renders repository/issue/PR read data, shows no mutation control until a separate write grant is pending/approved, requires an exact confirmation action and visible scope/repository/argument summary, disables confirmation after submission, displays command status, and renders redacted audit history.
