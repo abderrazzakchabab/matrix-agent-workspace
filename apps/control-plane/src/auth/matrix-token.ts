@@ -10,7 +10,10 @@ export function getSynapseBaseUrl(): string {
   return process.env.SYNAPSE_BASE_URL ?? 'http://localhost:8008';
 }
 
-/** Encrypted (or, for Task 2, fixture-encoded) token envelope. */
+/**
+ * Encrypted token envelope. Production encryption is AES-256-GCM via
+ * `security/envelope-encryption.ts`; Task 2 auth still uses the fixture cipher.
+ */
 export interface EncryptedToken {
   ciphertext: string;
   iv: string;
@@ -24,8 +27,9 @@ export interface TokenCipher {
 }
 
 /**
- * Task 2 fixture cipher. Reversible and non-cryptographic; Task 3 replaces it
- * with AES-256-GCM envelope encryption before deployment.
+ * Task 2 fixture cipher. Reversible and non-cryptographic; still the default
+ * session cipher. `security/envelope-encryption.ts` provides the production
+ * AES-256-GCM cipher, which must replace this before deployment.
  */
 export function createFixtureTokenCipher(): TokenCipher {
   return {
