@@ -5,6 +5,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:foundation": "vitest run apps/control-plane/test/health.route.test.ts packages/contracts/test/contracts.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit"
   },
