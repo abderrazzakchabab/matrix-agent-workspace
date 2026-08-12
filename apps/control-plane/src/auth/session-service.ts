@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { getPool, withTenant } from '../db/client';
 import { SESSIONS } from '../db/schema/sessions';
-import { createFixtureTokenCipher, type TokenCipher } from './matrix-token';
+import { getDefaultEnvelopeCipher } from '../security/envelope-encryption';
+import type { TokenCipher } from './matrix-token';
 
 export const SESSION_COOKIE = 'matrix_session';
 export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
@@ -29,7 +30,7 @@ function generateOpaqueId(): string {
 let defaultCipher: TokenCipher | undefined;
 
 export function getTokenCipher(): TokenCipher {
-  if (!defaultCipher) defaultCipher = createFixtureTokenCipher();
+  if (!defaultCipher) defaultCipher = getDefaultEnvelopeCipher();
   return defaultCipher;
 }
 
