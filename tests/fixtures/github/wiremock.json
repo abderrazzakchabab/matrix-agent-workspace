@@ -1,0 +1,152 @@
+{
+  "mappings": [
+    {
+      "name": "installation repositories",
+      "request": { "method": "GET", "urlPath": "/installation/repositories" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "total_count": 2,
+          "repositories": [
+            {
+              "id": 101,
+              "name": "widget",
+              "full_name": "acme/widget",
+              "private": true,
+              "owner": { "login": "acme" },
+              "default_branch": "main",
+              "html_url": "https://github.example/acme/widget",
+              "description": "Private widget"
+            },
+            {
+              "id": 102,
+              "name": "secret",
+              "full_name": "acme/secret",
+              "private": true,
+              "owner": { "login": "acme" },
+              "default_branch": "main",
+              "html_url": "https://github.example/acme/secret",
+              "description": "Not allowlisted"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "issues page one",
+      "request": {
+        "method": "GET",
+        "urlPath": "/repos/acme/widget/issues",
+        "queryParameters": { "page": { "equalTo": "1" } }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Link": "<http://127.0.0.1:4020/repos/acme/widget/issues?page=2&per_page=30>; rel=\"next\""
+        },
+        "jsonBody": [
+          {
+            "id": 6001,
+            "number": 6,
+            "title": "First issue",
+            "state": "closed",
+            "user": { "login": "octo" },
+            "labels": [{ "name": "bug" }],
+            "html_url": "https://github.example/acme/widget/issues/6",
+            "created_at": "2026-08-01T00:00:00Z",
+            "updated_at": "2026-08-02T00:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "issues page two",
+      "request": {
+        "method": "GET",
+        "urlPath": "/repos/acme/widget/issues",
+        "queryParameters": { "page": { "equalTo": "2" } }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Link": "<http://127.0.0.1:4020/repos/acme/widget/issues?page=3&per_page=30>; rel=\"next\""
+        },
+        "jsonBody": [
+          {
+            "id": 7001,
+            "number": 7,
+            "title": "Cursor issue",
+            "state": "open",
+            "user": { "login": "alice-gh" },
+            "labels": [{ "name": "help wanted" }],
+            "html_url": "https://github.example/acme/widget/issues/7",
+            "created_at": "2026-08-03T00:00:00Z",
+            "updated_at": "2026-08-04T00:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "pull requests",
+      "request": { "method": "GET", "urlPath": "/repos/acme/widget/pulls" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": [
+          {
+            "id": 11001,
+            "number": 11,
+            "title": "Safer widget",
+            "state": "open",
+            "draft": false,
+            "user": { "login": "bob-gh" },
+            "head": { "ref": "safe-widget" },
+            "base": { "ref": "main" },
+            "html_url": "https://github.example/acme/widget/pull/11",
+            "created_at": "2026-08-05T00:00:00Z",
+            "updated_at": "2026-08-06T00:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "pull request files",
+      "request": { "method": "GET", "urlPath": "/repos/acme/widget/pulls/11/files" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": [
+          {
+            "sha": "abc123",
+            "filename": "src/widget.ts",
+            "status": "modified",
+            "additions": 4,
+            "deletions": 1,
+            "changes": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "pull request reviews",
+      "request": { "method": "GET", "urlPath": "/repos/acme/widget/pulls/11/reviews" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": [
+          {
+            "id": 22001,
+            "state": "APPROVED",
+            "body": "Looks good",
+            "user": { "login": "reviewer-gh" },
+            "submitted_at": "2026-08-07T00:00:00Z",
+            "html_url": "https://github.example/acme/widget/pull/11#pullrequestreview-22001"
+          }
+        ]
+      }
+    }
+  ]
+}
