@@ -13,14 +13,9 @@ import {
   type InstallationAuthorizationStore,
 } from '../../src/github/app-auth';
 import { EnvelopeCipher, type EnvelopeKeyring } from '../../src/security/envelope-encryption';
-import {
-  POST as postIssue,
-  PUT as putIssue,
-} from '../../src/app/api/github/repositories/[owner]/[repo]/issues/route';
-import {
-  PATCH as patchPull,
-  DELETE as deletePull,
-} from '../../src/app/api/github/repositories/[owner]/[repo]/pulls/route';
+import * as repositoriesRoute from '../../src/app/api/github/repositories/route';
+import * as issuesRoute from '../../src/app/api/github/repositories/[owner]/[repo]/issues/route';
+import * as pullsRoute from '../../src/app/api/github/repositories/[owner]/[repo]/pulls/route';
 
 interface Mapping {
   request: {
@@ -237,17 +232,45 @@ describe('GitHub read-only client', () => {
     });
   });
 
-  it('rejects every mutation method before any GitHub outbound request', async () => {
+  it('rejects every mutation method on every Phase B repository route before any GitHub outbound request', async () => {
     const before = requests.length;
     const context = { params: Promise.resolve({ owner: 'acme', repo: 'widget' }) };
-    const responses = await Promise.all([
-      postIssue(new NextRequest('http://test.local/api/github/repositories/acme/widget/issues', { method: 'POST' }), context),
-      putIssue(new NextRequest('http://test.local/api/github/repositories/acme/widget/issues', { method: 'PUT' }), context),
-      patchPull(new NextRequest('http://test.local/api/github/repositories/acme/widget/pulls', { method: 'PATCH' }), context),
-      deletePull(new NextRequest('http://test.local/api/github/repositories/acme/widget/pulls', { method: 'DELETE' }), context),
-    ]);
+    const methods = ['POST', 'PUT', 'PATCH', 'DELETE'] as const;
+    const routeCases = [
+      {
+        path: '/api/github/repositories',
+        handlers: repositoriesRoute,
+        invoke(method: (typeof methods)[number], request: NextRequest) {
+          return repositoriesRoute[method](request);
+        },
+      },
+      {
+        path: '/api/github/repositories/acme/widget/issues',
+        handlers: issuesRoute,
+        invoke(method: (typeof methods)[number], request: NextRequest) {
+          return issuesRoute[method](request, context);
+        },
+      },
+      {
+        path: '/api/github/repositories/acme/widget/pulls',
+        handlers: pullsRoute,
+        invoke(method: (typeof methods)[number], request: NextRequest) {
+          return pullsRoute[method](request, context);
+        },
+      },
+    ];
 
-    expect(responses.map((response) => response.status)).toEqual([405, 405, 405, 405]);
+    const responses = await Promise.all(
+      routeCases.flatMap(({ path, handlers, invoke }) =>
+        methods.map((method) => {
+          expect(handlers[method]).toBeTypeOf('function');
+          return invoke(method, new NextRequest(`http://test.local${path}`, { method }));
+        }),
+      ),
+    );
+
+    expect(responses).toHaveLength(routeCases.length * methods.length);
+    expect(responses.every((response) => response.status === 405)).toBe(true);
     expect(requests).toHaveLength(before);
   });
 });
