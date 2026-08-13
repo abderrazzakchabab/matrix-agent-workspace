@@ -7,7 +7,10 @@
  * function retry never produces a duplicate logical send.
  */
 import { inngest } from '../client';
-import { deliverPending } from '../../matrix/delivery-worker';
+import {
+  deliverPending,
+  sweepPendingMatrixDeliveries,
+} from '../../matrix/delivery-worker';
 
 export const MATRIX_DELIVERY_REQUESTED_EVENT = 'matrix.delivery.requested';
 
@@ -30,9 +33,17 @@ export interface MatrixDeliveryRequestedEvent {
  */
 export async function dispatchMatrixDeliveryRequested(
   data: MatrixDeliveryRequestedData,
-): Promise<void> {
-  if (!process.env.INNGEST_EVENT_KEY) return;
-  await inngest.send({ name: MATRIX_DELIVERY_REQUESTED_EVENT, data });
+): Promise<boolean> {
+  if (!process.env.INNGEST_EVENT_KEY) return false;
+  try {
+    await inngest.send({ name: MATRIX_DELIVERY_REQUESTED_EVENT, data });
+    return true;
+  } catch {
+    console.error(
+      '[control-plane] Matrix delivery dispatch failed; pending outbox retained for sweep',
+    );
+    return false;
+  }
 }
 
 export const deliverMatrixEvent = inngest.createFunction(
@@ -48,6 +59,19 @@ export const deliverMatrixEvent = inngest.createFunction(
         { userId: data.userId, workspaceId: data.workspaceId },
         {},
       );
+    });
+  },
+);
+
+export const sweepMatrixOutbox = inngest.createFunction(
+  {
+    id: 'matrix-delivery-sweeper',
+    retries: 5,
+    triggers: [{ cron: '* * * * *' }],
+  },
+  async ({ step }) => {
+    return step.run('sweep-pending-matrix', async () => {
+      return sweepPendingMatrixDeliveries();
     });
   },
 );

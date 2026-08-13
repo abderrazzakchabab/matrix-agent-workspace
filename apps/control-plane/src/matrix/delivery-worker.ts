@@ -16,7 +16,7 @@
  *   reruns agent work.
  */
 import type { PoolClient } from 'pg';
-import { withTenant } from '../db/client';
+import { getPool, withTenant } from '../db/client';
 import type { TenantContext } from '../db/repositories/run-repository';
 import { OUTBOX_MESSAGES } from '../db/schema/outbox';
 import { renderMessage } from './message-renderer';
@@ -37,6 +37,10 @@ export interface DeliveryReport {
   delivered: number;
   failed: number;
   skipped: number;
+}
+
+export interface DeliverySweepOptions extends DeliveryOptions {
+  tenantBatchSize?: number;
 }
 
 function emptyReport(): DeliveryReport {
@@ -227,5 +231,29 @@ export async function deliverPending(
     }
   }
   if (retryableError) throw retryableError;
+  return report;
+}
+
+export async function sweepPendingMatrixDeliveries(
+  options: DeliverySweepOptions = {},
+): Promise<DeliveryReport> {
+  const tenantBatchSize = options.tenantBatchSize ?? 100;
+  const { rows } = await getPool().query(
+    'SELECT user_id, workspace_id FROM pending_matrix_delivery_tenants($1)',
+    [tenantBatchSize],
+  );
+  const report = emptyReport();
+  for (const row of rows) {
+    const tenantReport = await deliverPending(
+      {
+        userId: row.user_id as string,
+        workspaceId: row.workspace_id as string,
+      },
+      { matrix: options.matrix, batchSize: options.batchSize },
+    );
+    report.delivered += tenantReport.delivered;
+    report.failed += tenantReport.failed;
+    report.skipped += tenantReport.skipped;
+  }
   return report;
 }

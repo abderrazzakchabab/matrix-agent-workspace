@@ -40,8 +40,16 @@ interface ModelFixtureState {
 }
 
 interface GithubFixtureState {
-  requests: Array<{ method: string; path: string }>;
-  mutationRequests: Array<{ method: string; path: string }>;
+  requests: Array<{
+    method: string;
+    path: string;
+    authorizationClass: 'none' | 'oauth' | 'installation' | 'app' | 'invalid';
+  }>;
+  mutationRequests: Array<{
+    method: string;
+    path: string;
+    authorizationClass: 'none' | 'oauth' | 'installation' | 'app' | 'invalid';
+  }>;
 }
 
 interface MatrixMessage {
@@ -270,9 +278,36 @@ function terminalBodies(bodies: string[]): string[] {
   return bodies.filter((body) => /Run (completed|failed|partially completed|cancelled)/.test(body));
 }
 
+function assertIsolatedPhaseBDatabase(): void {
+  const appValue = process.env.DATABASE_URL;
+  const migrationsValue = process.env.MIGRATIONS_DATABASE_URL;
+  if (
+    !appValue ||
+    !migrationsValue ||
+    appValue !== process.env.PHASE_B_DATABASE_URL ||
+    migrationsValue !== process.env.PHASE_B_MIGRATIONS_DATABASE_URL
+  ) {
+    throw new Error('Phase B destructive setup requires explicit PHASE_B test database URLs');
+  }
+  const app = new URL(appValue);
+  const migrations = new URL(migrationsValue);
+  const appName = decodeURIComponent(app.pathname.replace(/^\/+/, ''));
+  const migrationsName = decodeURIComponent(migrations.pathname.replace(/^\/+/, ''));
+  if (
+    !appName.endsWith('_test') ||
+    appName !== migrationsName ||
+    app.host !== migrations.host ||
+    !app.username ||
+    app.username === migrations.username
+  ) {
+    throw new Error('Phase B destructive setup requires one isolated _test database');
+  }
+}
+
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
+  assertIsolatedPhaseBDatabase();
   await runMigrations();
   await getAdminPool().query('TRUNCATE rooms, users CASCADE');
   for (const url of [MODEL_FIXTURE_URL, GITHUB_FIXTURE_URL]) {
@@ -481,6 +516,10 @@ test('Phase B backend contract is durable, replayable, Matrix-first, and GitHub 
   expect(terminalBodies(await waitForMatrixTerminal(aliceToken, roomId, cancelled.runId))).toHaveLength(1);
 
   // Link the Matrix identity to GitHub OAuth, then read through an authorized installation.
+  for (const path of ['/user', '/installation/repositories']) {
+    const unauthorized = await fetch(`${GITHUB_FIXTURE_URL}${path}`);
+    expect(unauthorized.status).toBe(401);
+  }
   const oauthStart = await request.get(`${CONTROL_PLANE_URL}/api/github/oauth/start`, {
     headers: { cookie },
     maxRedirects: 0,
@@ -524,12 +563,37 @@ test('Phase B backend contract is durable, replayable, Matrix-first, and GitHub 
     items: [expect.objectContaining({ number: 11, state: 'open' })],
   });
 
-  for (const method of ['post', 'put', 'patch', 'delete'] as const) {
-    const mutation = await request[method](
-      `${CONTROL_PLANE_URL}/api/github/repositories/acme/widget/issues?workspaceId=${workspaceId}`,
-      { headers: { cookie }, data: { title: 'must not be sent' } },
-    );
-    expect(mutation.status()).toBe(405);
+  const authorizedGithub = await githubState();
+  expect(authorizedGithub.requests).toContainEqual({
+    method: 'GET',
+    path: '/user',
+    authorizationClass: 'oauth',
+  });
+  for (const path of [
+    '/installation/repositories',
+    '/repos/acme/widget/issues',
+    '/repos/acme/widget/pulls',
+  ]) {
+    expect(authorizedGithub.requests).toContainEqual({
+      method: 'GET',
+      path,
+      authorizationClass: 'installation',
+    });
+  }
+
+  const mutationRoutes = [
+    `${CONTROL_PLANE_URL}/api/github/repositories?workspaceId=${workspaceId}&installationId=42`,
+    `${CONTROL_PLANE_URL}/api/github/repositories/acme/widget/issues?workspaceId=${workspaceId}&installationId=42`,
+    `${CONTROL_PLANE_URL}/api/github/repositories/acme/widget/pulls?workspaceId=${workspaceId}&installationId=42`,
+  ];
+  for (const route of mutationRoutes) {
+    for (const method of ['post', 'put', 'patch', 'delete'] as const) {
+      const mutation = await request[method](route, {
+        headers: { cookie },
+        data: { title: 'must not be sent' },
+      });
+      expect(mutation.status()).toBe(405);
+    }
   }
   const absentMutationRoute = await request.post(
     `${CONTROL_PLANE_URL}/api/workspaces/${workspaceId}/github/mutations`,

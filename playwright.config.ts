@@ -1,16 +1,68 @@
 import { defineConfig } from '@playwright/test';
 
+const DEFAULT_PHASE_B_DATABASE_URL =
+  'postgresql://matrix_app:matrix_app_password@127.0.0.1:5432/matrix_test';
+const DEFAULT_PHASE_B_MIGRATIONS_DATABASE_URL =
+  'postgresql://matrix:matrix_test_password@127.0.0.1:5432/matrix_test';
+
+function databaseTarget(value: string, variable: string): {
+  host: string;
+  name: string;
+  username: string;
+} {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${variable} must be a PostgreSQL URL`);
+  }
+  if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
+    throw new Error(`${variable} must be a PostgreSQL URL`);
+  }
+  const name = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+  if (!name.endsWith('_test')) {
+    throw new Error(`${variable} must target a database ending in _test`);
+  }
+  return { host: url.host, name, username: decodeURIComponent(url.username) };
+}
+
+const hasPhaseBDatabase = process.env.PHASE_B_DATABASE_URL !== undefined;
+const hasPhaseBMigrationsDatabase =
+  process.env.PHASE_B_MIGRATIONS_DATABASE_URL !== undefined;
+if (hasPhaseBDatabase !== hasPhaseBMigrationsDatabase) {
+  throw new Error(
+    'PHASE_B_DATABASE_URL and PHASE_B_MIGRATIONS_DATABASE_URL must be set together',
+  );
+}
+const phaseBDatabaseUrl =
+  process.env.PHASE_B_DATABASE_URL ?? DEFAULT_PHASE_B_DATABASE_URL;
+const phaseBMigrationsDatabaseUrl =
+  process.env.PHASE_B_MIGRATIONS_DATABASE_URL ??
+  DEFAULT_PHASE_B_MIGRATIONS_DATABASE_URL;
+const appDatabase = databaseTarget(phaseBDatabaseUrl, 'PHASE_B_DATABASE_URL');
+const migrationsDatabase = databaseTarget(
+  phaseBMigrationsDatabaseUrl,
+  'PHASE_B_MIGRATIONS_DATABASE_URL',
+);
+if (
+  appDatabase.host !== migrationsDatabase.host ||
+  appDatabase.name !== migrationsDatabase.name
+) {
+  throw new Error('Phase B application and migration URLs must target the same test database');
+}
+if (!appDatabase.username || appDatabase.username === migrationsDatabase.username) {
+  throw new Error('Phase B application and migration URLs must use distinct database roles');
+}
+
 const fixtureEnv: Record<string, string> = {
   ...Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
   ),
   CONTROL_PLANE_URL: process.env.CONTROL_PLANE_URL ?? 'http://127.0.0.1:3000',
-  DATABASE_URL:
-    process.env.DATABASE_URL ??
-    'postgresql://matrix_app:matrix_app_password@127.0.0.1:5432/matrix_test',
-  MIGRATIONS_DATABASE_URL:
-    process.env.MIGRATIONS_DATABASE_URL ??
-    'postgresql://matrix:matrix_test_password@127.0.0.1:5432/matrix_test',
+  PHASE_B_DATABASE_URL: phaseBDatabaseUrl,
+  PHASE_B_MIGRATIONS_DATABASE_URL: phaseBMigrationsDatabaseUrl,
+  DATABASE_URL: phaseBDatabaseUrl,
+  MIGRATIONS_DATABASE_URL: phaseBMigrationsDatabaseUrl,
   SYNAPSE_BASE_URL: process.env.SYNAPSE_BASE_URL ?? 'http://127.0.0.1:8008',
   SYNAPSE_URL: process.env.SYNAPSE_URL ?? 'http://127.0.0.1:8008',
   MODEL_FIXTURE_URL: process.env.MODEL_FIXTURE_URL ?? 'http://127.0.0.1:4010',

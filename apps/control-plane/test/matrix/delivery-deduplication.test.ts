@@ -8,12 +8,16 @@
  * outbox. Uses the real PostgreSQL fixture (outbox, RLS, encrypted session)
  * with an in-memory Matrix client fixture.
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getAdminPool } from '../../src/db/client';
 import { createRun } from '../../src/db/repositories/run-repository';
 import { publishEvent } from '../../src/events/event-service';
-import { deliverPending } from '../../src/matrix/delivery-worker';
+import {
+  deliverPending,
+  sweepPendingMatrixDeliveries,
+} from '../../src/matrix/delivery-worker';
+import { inngest } from '../../src/inngest/client';
 import {
   MatrixSendError,
   type MatrixDeliveryClient,
@@ -113,6 +117,48 @@ describe('Matrix delivery deduplication', () => {
 
     expect(client.sentKeys).toEqual([deliveryKey]);
     expect(client.attemptedKeys).toEqual([deliveryKey]);
+  });
+
+  it('sweeps a committed message after its immediate dispatch fails', async () => {
+    const runId = `run_${randomUUID()}`;
+    await createRun(
+      { userId: ownerId, workspaceId },
+      { id: runId, roomId: ROOM_ID, promptHash: 'hash', mode: 'parallel' },
+    );
+    const previousEventKey = process.env.INNGEST_EVENT_KEY;
+    process.env.INNGEST_EVENT_KEY = 'fixture-event-key';
+    const send = vi.spyOn(inngest, 'send').mockRejectedValueOnce(new Error('unavailable'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const published = await publishEvent(
+        { userId: ownerId, workspaceId },
+        runId,
+        {
+          id: `evt_${randomUUID()}`,
+          type: 'specialist.started',
+          version: 1,
+          payload: { specialistId: 'repo-reader' },
+        },
+      );
+      const pending = await getAdminPool().query(
+        'SELECT status FROM outbox_messages WHERE delivery_key = $1',
+        [`${runId}:${published.sequence}:${ROOM_ID}`],
+      );
+      expect(pending.rows).toEqual([{ status: 'pending' }]);
+
+      const client = new FixtureMatrixClient();
+      const swept = await sweepPendingMatrixDeliveries({ matrix: client });
+      expect(swept.delivered).toBe(1);
+      expect(client.sentKeys).toEqual([`${runId}:${published.sequence}:${ROOM_ID}`]);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledTimes(1);
+    } finally {
+      send.mockRestore();
+      log.mockRestore();
+      if (previousEventKey === undefined) delete process.env.INNGEST_EVENT_KEY;
+      else process.env.INNGEST_EVENT_KEY = previousEventKey;
+    }
   });
 
   it('throws on a transient Matrix 503 so Inngest retries the drain without duplicating the logical send', async () => {
