@@ -12,8 +12,8 @@
     "test:fixtures:health": "docker-compose -f infra/docker-compose.test.yml exec -T postgres psql -U matrix -d matrix_test -tAc \"SELECT extname FROM pg_extension WHERE extname = 'vector'\" | grep -qx vector && curl -fsS http://127.0.0.1:8008/_matrix/client/versions >/dev/null && curl -fsS http://127.0.0.1:4010/health >/dev/null && curl -fsS http://127.0.0.1:4020/health >/dev/null && curl -fsS http://127.0.0.1:8288/dev >/dev/null && test -z \"$(docker-compose -f infra/docker-compose.test.yml ps -q | xargs -r docker inspect -f '{{if .State.ExitCode}}{{.Name}}{{end}}')\"",
     "test:fixtures:down": "docker-compose -f infra/docker-compose.test.yml down --remove-orphans",
     "test:phase-b": "pnpm test:fixtures:up && playwright test apps/control-plane/test/e2e/phase-b-backend.spec.ts",
-    "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && pnpm --filter @matrix/mobile typecheck",
+    "lint": "tsc --noEmit && pnpm --filter @matrix/mobile typecheck"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
