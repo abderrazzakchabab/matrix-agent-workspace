@@ -230,6 +230,15 @@ export async function deliverPending(
           AND o.${OUTBOX_MESSAGES.status} = 'pending'
           AND (o.${OUTBOX_MESSAGES.nextAttemptAt} IS NULL
                OR o.${OUTBOX_MESSAGES.nextAttemptAt} <= now())
+          AND NOT EXISTS (
+            SELECT 1
+              FROM ${OUTBOX_MESSAGES.table} earlier
+             WHERE earlier.${OUTBOX_MESSAGES.aggregateKey} = o.${OUTBOX_MESSAGES.aggregateKey}
+               AND earlier.${OUTBOX_MESSAGES.destination} = o.${OUTBOX_MESSAGES.destination}
+               AND earlier.${OUTBOX_MESSAGES.status} = 'pending'
+               AND earlier.${OUTBOX_MESSAGES.eventSequence} < o.${OUTBOX_MESSAGES.eventSequence}
+               AND earlier.${OUTBOX_MESSAGES.nextAttemptAt} > now()
+          )
         ORDER BY o.${OUTBOX_MESSAGES.eventSequence} ASC, o.${OUTBOX_MESSAGES.createdAt} ASC
         LIMIT $3`,
       [tenant.workspaceId, tenant.userId, batchSize],
@@ -238,24 +247,11 @@ export async function deliverPending(
   });
 
   const report = emptyReport();
-  let retryableError: unknown = null;
   for (const id of candidates) {
-    try {
-      const result = await deliverOne(tenant, id, matrix);
-      if ('retryableError' in result) {
-        retryableError = result.retryableError;
-      } else {
-        report[result.outcome] += 1;
-      }
-    } catch (error) {
-      if (isRetryableMatrixError(error)) {
-        retryableError = error;
-      } else {
-        throw error;
-      }
-    }
+    const result = await deliverOne(tenant, id, matrix);
+    if ('retryableError' in result) throw result.retryableError;
+    report[result.outcome] += 1;
   }
-  if (retryableError) throw retryableError;
   return report;
 }
 

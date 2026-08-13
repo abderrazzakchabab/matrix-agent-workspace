@@ -59,21 +59,30 @@ export function isMatrixTokenUnavailable(error: unknown): boolean {
 
 /** Matrix Client-Server API send client (Synapse compatible). */
 export class SynapseDeliveryClient implements MatrixDeliveryClient {
-  constructor(private readonly baseUrl: string = getSynapseBaseUrl()) {}
+  constructor(
+    private readonly baseUrl: string = getSynapseBaseUrl(),
+    private readonly requestTimeoutMs = 10_000,
+  ) {}
 
   async sendMessage(params: MatrixSendParams): Promise<MatrixSendResult> {
     const txnId = encodeURIComponent(params.deliveryKey);
     const url = `${params.homeserverUrl}/_matrix/client/v3/rooms/${encodeURIComponent(
       params.roomId,
     )}/send/m.room.message/${txnId}`;
-    const res = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        authorization: `Bearer ${params.accessToken}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ msgtype: 'm.text', body: params.body }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${params.accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ msgtype: 'm.text', body: params.body }),
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
+      });
+    } catch {
+      throw new MatrixSendError('Matrix send transport failed', 0, true);
+    }
     if (res.status === 429 || res.status >= 500) {
       throw new MatrixSendError(`Matrix send failed with ${res.status}`, res.status, true);
     }

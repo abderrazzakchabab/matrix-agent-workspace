@@ -20,6 +20,7 @@ import {
 import { inngest } from '../../src/inngest/client';
 import {
   MatrixSendError,
+  SynapseDeliveryClient,
   type MatrixDeliveryClient,
   type MatrixSendParams,
   type MatrixSendResult,
@@ -235,6 +236,113 @@ describe('Matrix delivery deduplication', () => {
     expect(delivered.rows).toEqual([
       { status: 'delivered', attempts: 2, next_attempt_at: null },
     ]);
+  });
+
+  it('stops a tenant drain behind a deferred earlier sequence', async () => {
+    const { runId, deliveryKey } = await makeRunWithProgressEvent();
+    const laterEvent = await publishEvent(
+      { userId: ownerId, workspaceId },
+      runId,
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'run.completed',
+        version: 1,
+        payload: { summary: 'done' },
+      },
+    );
+    const laterDeliveryKey = `${runId}:${laterEvent.sequence}:${ROOM_ID}`;
+    const client = new FixtureMatrixClient();
+    client.failNext(deliveryKey, 503);
+
+    await expect(
+      deliverPending({ userId: ownerId, workspaceId }, { matrix: client }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(client.attemptedKeys).toEqual([deliveryKey]);
+
+    const immediate = await deliverPending(
+      { userId: ownerId, workspaceId },
+      { matrix: client },
+    );
+    expect(immediate.delivered).toBe(0);
+    expect(client.attemptedKeys).toEqual([deliveryKey]);
+
+    await getAdminPool().query(
+      `UPDATE outbox_messages SET next_attempt_at = now() - interval '1 second'
+        WHERE delivery_key = $1`,
+      [deliveryKey],
+    );
+    const retried = await deliverPending(
+      { userId: ownerId, workspaceId },
+      { matrix: client },
+    );
+    expect(retried.delivered).toBe(2);
+    expect(client.sentKeys).toEqual([deliveryKey, laterDeliveryKey]);
+    expect(client.attemptedKeys).toEqual([deliveryKey, deliveryKey, laterDeliveryKey]);
+  });
+
+  it('defers rejected fetch transport failures for retry', async () => {
+    const { deliveryKey } = await makeRunWithProgressEvent();
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      await expect(
+        deliverPending(
+          { userId: ownerId, workspaceId },
+          { matrix: new SynapseDeliveryClient(undefined, 100) },
+        ),
+      ).rejects.toMatchObject({ status: 0, retryable: true });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const deferred = await getAdminPool().query(
+        `SELECT status, attempts, next_attempt_at > now() AS deferred
+           FROM outbox_messages WHERE delivery_key = $1`,
+        [deliveryKey],
+      );
+      expect(deferred.rows).toEqual([{ status: 'pending', attempts: 1, deferred: true }]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('times out Matrix transport and defers the delivery for retry', async () => {
+    const { deliveryKey } = await makeRunWithProgressEvent();
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) {
+          reject(new Error('missing abort signal'));
+          return;
+        }
+        const rejectOnAbort = () => reject(signal.reason);
+        if (signal.aborted) rejectOnAbort();
+        else signal.addEventListener('abort', rejectOnAbort, { once: true });
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      await expect(
+        deliverPending(
+          { userId: ownerId, workspaceId },
+          { matrix: new SynapseDeliveryClient(undefined, 5) },
+        ),
+      ).rejects.toMatchObject({ status: 0, retryable: true });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+      expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+
+      const deferred = await getAdminPool().query(
+        `SELECT status, attempts, next_attempt_at > now() AS deferred
+           FROM outbox_messages WHERE delivery_key = $1`,
+        [deliveryKey],
+      );
+      expect(deferred.rows).toEqual([{ status: 'pending', attempts: 1, deferred: true }]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('throws on a transient Matrix 503 and defers the next drain attempt', async () => {
