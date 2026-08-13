@@ -49,7 +49,7 @@ export function RunComposerScreen({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queuedRun, setQueuedRun] = useState<RunResponseType | null>(null);
-  const idempotencyKey = useRef(createIdempotencyKey()).current;
+  const idempotencyKey = useRef<string | null>(null);
   const canSubmit = Boolean(
     binding && prompt.trim().length > 0 && selectedIds.length > 0 && mode && !loading,
   );
@@ -72,7 +72,10 @@ export function RunComposerScreen({
       roomId: binding.roomId,
     };
     try {
-      const run = await controlPlane.launchRun(binding.workspaceId, request, idempotencyKey);
+      const requestIdempotencyKey = idempotencyKey.current ?? createIdempotencyKey();
+      idempotencyKey.current = requestIdempotencyKey;
+      const run = await controlPlane.launchRun(binding.workspaceId, request, requestIdempotencyKey);
+      idempotencyKey.current = null;
       setQueuedRun(run);
       onRunStarted?.(run);
     } catch (cause) {

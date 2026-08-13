@@ -89,16 +89,28 @@ export function createControlPlaneClient(options: {
   baseUrl: string;
   sessionStore: SessionStore;
   fetch?: FetchImplementation;
+  onUnauthorized?(): void;
 }): ControlPlaneApi {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   const fetchImpl = options.fetch ?? (globalThis.fetch as unknown as FetchImplementation);
+
+  async function invalidateSession(): Promise<void> {
+    try {
+      await options.sessionStore.clear();
+    } finally {
+      options.onUnauthorized?.();
+    }
+  }
 
   async function authenticatedRequest<T>(path: string, init?: {
     method?: string;
     body?: unknown;
   }): Promise<T> {
     const session = await options.sessionStore.load();
-    if (!session) throw new ControlPlaneError('Sign in again to continue', 401, 'SESSION_REQUIRED');
+    if (!session) {
+      await invalidateSession();
+      throw new ControlPlaneError('Sign in again to continue', 401, 'SESSION_REQUIRED');
+    }
     const response = await fetchImpl(`${baseUrl}${path}`, {
       method: init?.method ?? 'GET',
       headers: {
@@ -108,6 +120,7 @@ export function createControlPlaneClient(options: {
       },
       body: init?.body === undefined ? undefined : JSON.stringify(init.body),
     });
+    if (response.status === 401) await invalidateSession();
     return readResponse<T>(response);
   }
 

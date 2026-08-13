@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -32,9 +32,17 @@ export function RootNavigator({
   const [restoring, setRestoring] = useState(true);
   const [hasSession, setHasSession] = useState(false);
   const [boundRoom, setBoundRoom] = useState<RoomBinding | null>(null);
+  const handleUnauthorized = useCallback(() => {
+    setBoundRoom(null);
+    setHasSession(false);
+  }, []);
   const controlPlane = useMemo(
-    () => createControlPlaneClient({ baseUrl: controlPlaneBaseUrl, sessionStore }),
-    [controlPlaneBaseUrl],
+    () => createControlPlaneClient({
+      baseUrl: controlPlaneBaseUrl,
+      sessionStore,
+      onUnauthorized: handleUnauthorized,
+    }),
+    [controlPlaneBaseUrl, handleUnauthorized],
   );
   const matrixClient = useMemo(() => createMatrixClient(controlPlane), [controlPlane]);
 
@@ -77,37 +85,40 @@ export function RootNavigator({
           contentStyle: { backgroundColor: '#f7f7f5' },
         }}
       >
-        <Stack.Screen name="Login" options={{ title: 'Sign in' }}>
-          {({ navigation }) => (
-            <LoginScreen
-              matrixClient={matrixClient}
-              onAuthenticated={() => {
-                setHasSession(true);
-                navigation.replace('RoomBinding');
-              }}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen name="RoomBinding" options={{ title: 'Room binding', headerBackVisible: false }}>
-          {({ navigation }) => (
-            <RoomBindingScreen
-              controlPlane={controlPlane}
-              onBound={(binding) => {
-                setBoundRoom(binding);
-                navigation.navigate('RunComposer');
-              }}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen name="RunComposer" options={{ title: 'New run' }}>
-          {() => (
-            <RunComposerScreen
-              binding={boundRoom}
-              controlPlane={controlPlane}
-              specialists={specialists}
-            />
-          )}
-        </Stack.Screen>
+        {!hasSession ? (
+          <Stack.Screen name="Login" options={{ title: 'Sign in' }}>
+            {() => (
+              <LoginScreen
+                matrixClient={matrixClient}
+                onAuthenticated={() => setHasSession(true)}
+              />
+            )}
+          </Stack.Screen>
+        ) : null}
+        {hasSession ? (
+          <Stack.Screen name="RoomBinding" options={{ title: 'Room binding', headerBackVisible: false }}>
+            {({ navigation }) => (
+              <RoomBindingScreen
+                controlPlane={controlPlane}
+                onBound={(binding) => {
+                  setBoundRoom(binding);
+                  navigation.navigate('RunComposer');
+                }}
+              />
+            )}
+          </Stack.Screen>
+        ) : null}
+        {hasSession ? (
+          <Stack.Screen name="RunComposer" options={{ title: 'New run' }}>
+            {() => (
+              <RunComposerScreen
+                binding={boundRoom}
+                controlPlane={controlPlane}
+                specialists={specialists}
+              />
+            )}
+          </Stack.Screen>
+        ) : null}
       </Stack.Navigator>
     </NavigationContainer>
   );
