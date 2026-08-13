@@ -36,6 +36,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to start the run. Check the form and retry.';
 }
 
+function requestFingerprint(workspaceId: string, request: RunRequestType): string {
+  return JSON.stringify({ workspaceId, request });
+}
+
 export function RunComposerScreen({
   binding,
   controlPlane,
@@ -49,7 +53,7 @@ export function RunComposerScreen({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queuedRun, setQueuedRun] = useState<RunResponseType | null>(null);
-  const idempotencyKey = useRef<string | null>(null);
+  const pendingLaunch = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
   const canSubmit = Boolean(
     binding && prompt.trim().length > 0 && selectedIds.length > 0 && mode && !loading,
   );
@@ -72,10 +76,13 @@ export function RunComposerScreen({
       roomId: binding.roomId,
     };
     try {
-      const requestIdempotencyKey = idempotencyKey.current ?? createIdempotencyKey();
-      idempotencyKey.current = requestIdempotencyKey;
+      const fingerprint = requestFingerprint(binding.workspaceId, request);
+      const requestIdempotencyKey = pendingLaunch.current?.fingerprint === fingerprint
+        ? pendingLaunch.current.idempotencyKey
+        : createIdempotencyKey();
+      pendingLaunch.current = { fingerprint, idempotencyKey: requestIdempotencyKey };
       const run = await controlPlane.launchRun(binding.workspaceId, request, requestIdempotencyKey);
-      idempotencyKey.current = null;
+      pendingLaunch.current = null;
       setQueuedRun(run);
       onRunStarted?.(run);
     } catch (cause) {

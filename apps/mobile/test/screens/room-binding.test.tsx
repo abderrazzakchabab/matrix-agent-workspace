@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 
 vi.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -60,6 +60,35 @@ describe('RoomBindingScreen', () => {
       roomId: '!room:example.test',
       workspaceId: 'ws_1',
     });
+  });
+
+  it('refreshes a successful empty-room response with loading feedback', async () => {
+    let resolveRefresh: (value: typeof rooms) => void = () => undefined;
+    const controlPlane = {
+      getRooms: vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockImplementationOnce(
+          () => new Promise<typeof rooms>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+        ),
+      bindRoom: vi.fn(),
+    };
+    const screen = render(
+      <RoomBindingScreen controlPlane={controlPlane} onBound={vi.fn()} />,
+    );
+
+    expect(await screen.findByText('No joined rooms are available. Join a Matrix room, then refresh.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh rooms' }));
+
+    expect(await screen.findByRole('progressbar', { name: 'Loading rooms' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Refresh rooms' })).toBeNull();
+
+    await act(async () => resolveRefresh(rooms));
+
+    expect(await screen.findByRole('button', { name: 'Select room Agent room' })).toBeTruthy();
+    expect(controlPlane.getRooms).toHaveBeenCalledTimes(2);
   });
 
   it('shows an actionable room-loading error', async () => {

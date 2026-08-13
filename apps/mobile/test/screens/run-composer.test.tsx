@@ -137,6 +137,89 @@ describe('RunComposerScreen', () => {
     ]);
   });
 
+  it('rotates the idempotency key when the submitted request changes after failure', async () => {
+    let attempt = 0;
+    const controlPlane = {
+      launchRun: vi.fn(async () => {
+        attempt += 1;
+        throw new Error(`Launch failed ${attempt}`);
+      }),
+    };
+    const createIdempotencyKey = vi
+      .fn()
+      .mockReturnValueOnce('mobile-1')
+      .mockReturnValueOnce('mobile-2')
+      .mockReturnValueOnce('mobile-3')
+      .mockReturnValueOnce('mobile-4')
+      .mockReturnValueOnce('mobile-5')
+      .mockReturnValueOnce('mobile-6');
+    const screen = render(
+      <RunComposerScreen
+        binding={binding}
+        controlPlane={controlPlane}
+        specialists={specialists}
+        createIdempotencyKey={createIdempotencyKey}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Run prompt'), {
+      target: { value: 'First request' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Repository reader' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Parallel' }));
+
+    async function launch(expectedAttempt: number) {
+      fireEvent.click(screen.getByRole('button', { name: 'Start run' }));
+      await waitFor(() => {
+        expect(screen.getByRole('alert').textContent).toContain(
+          `Launch failed ${expectedAttempt}`,
+        );
+      });
+    }
+
+    await launch(1);
+
+    fireEvent.change(screen.getByLabelText('Run prompt'), {
+      target: { value: 'Second request' },
+    });
+    await launch(2);
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Sequential' }));
+    await launch(3);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Issue reader' }));
+    await launch(4);
+
+    screen.rerender(
+      <RunComposerScreen
+        binding={{ ...binding, workspaceId: 'ws_2' }}
+        controlPlane={controlPlane}
+        specialists={specialists}
+        createIdempotencyKey={createIdempotencyKey}
+      />,
+    );
+    await launch(5);
+
+    screen.rerender(
+      <RunComposerScreen
+        binding={{ roomId: '!new-room:example.test', workspaceId: 'ws_2' }}
+        controlPlane={controlPlane}
+        specialists={specialists}
+        createIdempotencyKey={createIdempotencyKey}
+      />,
+    );
+    await launch(6);
+
+    expect(controlPlane.launchRun.mock.calls.map((call) => call[2])).toEqual([
+      'mobile-1',
+      'mobile-2',
+      'mobile-3',
+      'mobile-4',
+      'mobile-5',
+      'mobile-6',
+    ]);
+  });
+
   it('rotates the idempotency key after a successful launch', async () => {
     const controlPlane = {
       launchRun: vi.fn(async (

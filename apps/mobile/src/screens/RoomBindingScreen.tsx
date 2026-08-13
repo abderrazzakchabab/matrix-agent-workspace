@@ -85,7 +85,16 @@ export function RoomBindingScreen({ controlPlane, onBound }: RoomBindingScreenPr
               </View>
             ) : null}
             {!loadingRooms && rooms.length === 0 && !error ? (
-              <Text style={styles.muted}>No joined rooms are available. Join a Matrix room, then retry.</Text>
+              <View style={styles.emptyState}>
+                <Text style={styles.muted}>No joined rooms are available. Join a Matrix room, then refresh.</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Refresh rooms"
+                  onPress={loadRooms}
+                >
+                  <Text style={styles.refresh}>Refresh rooms</Text>
+                </Pressable>
+              </View>
             ) : null}
             {rooms.map((room) => {
               const selected = selectedRoomId === room.roomId;
@@ -167,6 +176,8 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#ffffff', borderColor: '#cbd1ce', borderRadius: 10, borderWidth: 1, color: '#17201c', fontSize: 16, paddingHorizontal: 14, paddingVertical: 13 },
   loading: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingVertical: 12 },
   muted: { color: '#68716d', fontSize: 14, lineHeight: 20 },
+  emptyState: { gap: 8 },
+  refresh: { color: '#225c45', fontSize: 14, fontWeight: '700' },
   choice: { alignItems: 'center', backgroundColor: '#ffffff', borderColor: '#d7dcda', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 12, minHeight: 68, padding: 12 },
   choiceSelected: { backgroundColor: '#eef6f1', borderColor: '#225c45', borderWidth: 2 },
   radioMark: { borderColor: '#8e9893', borderRadius: 9, borderWidth: 2, height: 18, width: 18 },
