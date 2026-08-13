@@ -1,0 +1,37 @@
+{
+  "name": "@matrix/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "export": "expo export --platform web",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@matrix/contracts": "workspace:*",
+    "@react-navigation/native": "^7.3.16",
+    "@react-navigation/native-stack": "^7.18.8",
+    "expo": "~57.0.12",
+    "expo-crypto": "~57.0.1",
+    "expo-secure-store": "~57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "^19.2.0",
+    "jsdom": "^30.0.1",
+    "react-dom": "19.2.3",
+    "react-native-web": "^0.21.2",
+    "typescript": "~6.0.3"
+  }
+}
