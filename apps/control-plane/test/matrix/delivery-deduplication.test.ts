@@ -161,7 +161,83 @@ describe('Matrix delivery deduplication', () => {
     }
   });
 
-  it('throws on a transient Matrix 503 so Inngest retries the drain without duplicating the logical send', async () => {
+  it('isolates retryable tenant failures and retries them after persisted backoff', async () => {
+    const first = await makeRunWithProgressEvent();
+    const secondOwnerId = await createUser(`@bob-${randomUUID()}:example.test`, HOMESERVER);
+    const secondWorkspaceId = await createWorkspace(secondOwnerId, 'Second Delivery Workspace');
+    const secondRoomId = `!room-${randomUUID()}:example.test`;
+    await createSession(
+      secondOwnerId,
+      'syt_bob_delivery',
+      new Date(Date.now() + 3600_000),
+    );
+    await getAdminPool().query(
+      'INSERT INTO rooms (room_id, homeserver_url) VALUES ($1, $2)',
+      [secondRoomId, HOMESERVER],
+    );
+    await getAdminPool().query(
+      `INSERT INTO room_bindings (room_id, homeserver_url, workspace_id, user_id)
+       VALUES ($1, $2, $3, $4)`,
+      [secondRoomId, HOMESERVER, secondWorkspaceId, secondOwnerId],
+    );
+    const secondRunId = `run_${randomUUID()}`;
+    await createRun(
+      { userId: secondOwnerId, workspaceId: secondWorkspaceId },
+      { id: secondRunId, roomId: secondRoomId, promptHash: 'hash', mode: 'parallel' },
+    );
+    const secondEvent = await publishEvent(
+      { userId: secondOwnerId, workspaceId: secondWorkspaceId },
+      secondRunId,
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'specialist.progress',
+        version: 1,
+        payload: { specialistId: 'repo-reader', summary: 'working' },
+      },
+    );
+    const secondDeliveryKey = `${secondRunId}:${secondEvent.sequence}:${secondRoomId}`;
+    const client = new FixtureMatrixClient();
+    client.failNext(first.deliveryKey, 503);
+
+    const swept = await sweepPendingMatrixDeliveries({ matrix: client });
+    expect(swept.delivered).toBe(1);
+    expect(client.sentKeys).toEqual([secondDeliveryKey]);
+
+    const deferred = await getAdminPool().query(
+      `SELECT status, attempts, next_attempt_at > now() AS deferred
+         FROM outbox_messages WHERE delivery_key = $1`,
+      [first.deliveryKey],
+    );
+    expect(deferred.rows).toEqual([{ status: 'pending', attempts: 1, deferred: true }]);
+
+    const immediateSweep = await sweepPendingMatrixDeliveries({ matrix: client });
+    expect(immediateSweep.delivered).toBe(0);
+    expect(client.attemptedKeys).toHaveLength(2);
+
+    await getAdminPool().query(
+      `UPDATE outbox_messages SET next_attempt_at = now() - interval '1 second'
+        WHERE delivery_key = $1`,
+      [first.deliveryKey],
+    );
+    const retried = await sweepPendingMatrixDeliveries({ matrix: client });
+    expect(retried.delivered).toBe(1);
+    expect(new Set(client.sentKeys)).toEqual(
+      new Set([first.deliveryKey, secondDeliveryKey]),
+    );
+    expect(client.attemptedKeys.filter((key) => key === first.deliveryKey)).toHaveLength(2);
+    expect(client.attemptedKeys.filter((key) => key === secondDeliveryKey)).toHaveLength(1);
+
+    const delivered = await getAdminPool().query(
+      `SELECT status, attempts, next_attempt_at
+         FROM outbox_messages WHERE delivery_key = $1`,
+      [first.deliveryKey],
+    );
+    expect(delivered.rows).toEqual([
+      { status: 'delivered', attempts: 2, next_attempt_at: null },
+    ]);
+  });
+
+  it('throws on a transient Matrix 503 and defers the next drain attempt', async () => {
     const { deliveryKey } = await makeRunWithProgressEvent();
     const client = new FixtureMatrixClient();
     client.failNext(deliveryKey, 503);
@@ -171,9 +247,23 @@ describe('Matrix delivery deduplication', () => {
     ).rejects.toMatchObject({ status: 503 });
     expect(client.sentKeys).toEqual([]);
 
-    // Inngest re-invokes the drain on retry; the still-pending message sends once.
+    const deferred = await getAdminPool().query(
+      `SELECT status, attempts, next_attempt_at > now() AS deferred
+         FROM outbox_messages WHERE delivery_key = $1`,
+      [deliveryKey],
+    );
+    expect(deferred.rows).toEqual([{ status: 'pending', attempts: 1, deferred: true }]);
+
     const second = await deliverPending({ userId: ownerId, workspaceId }, { matrix: client });
-    expect(second.delivered).toBe(1);
+    expect(second.delivered).toBe(0);
+
+    await getAdminPool().query(
+      `UPDATE outbox_messages SET next_attempt_at = now() - interval '1 second'
+        WHERE delivery_key = $1`,
+      [deliveryKey],
+    );
+    const third = await deliverPending({ userId: ownerId, workspaceId }, { matrix: client });
+    expect(third.delivered).toBe(1);
 
     expect(client.sentKeys).toEqual([deliveryKey]);
     expect(client.attemptedKeys).toEqual([deliveryKey, deliveryKey]);

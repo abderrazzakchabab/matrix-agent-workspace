@@ -57,6 +57,14 @@ interface OutboxMessageRow {
   attempts: number;
 }
 
+type DeliveryAttemptResult =
+  | { outcome: keyof DeliveryReport }
+  | { retryableError: unknown };
+
+function retryDelaySeconds(attempts: number): number {
+  return Math.min(300, 5 * 2 ** Math.min(attempts, 6));
+}
+
 function mapOutboxRow(row: Record<string, unknown>): OutboxMessageRow {
   return {
     id: row.id as string,
@@ -92,15 +100,20 @@ async function deliverOne(
   tenant: TenantContext,
   messageId: string,
   matrix: MatrixDeliveryClient,
-): Promise<keyof DeliveryReport> {
+): Promise<DeliveryAttemptResult> {
   return withTenant(tenant.userId, async (client) => {
     const claimed = await client.query(
-      `SELECT * FROM ${OUTBOX_MESSAGES.table} WHERE ${OUTBOX_MESSAGES.id} = $1 FOR UPDATE`,
+      `SELECT * FROM ${OUTBOX_MESSAGES.table}
+        WHERE ${OUTBOX_MESSAGES.id} = $1
+          AND ${OUTBOX_MESSAGES.status} = 'pending'
+          AND (${OUTBOX_MESSAGES.nextAttemptAt} IS NULL
+               OR ${OUTBOX_MESSAGES.nextAttemptAt} <= now())
+        FOR UPDATE`,
       [messageId],
     );
-    if (claimed.rows.length === 0) return 'skipped';
+    if (claimed.rows.length === 0) return { outcome: 'skipped' };
     const msg = mapOutboxRow(claimed.rows[0]);
-    if (msg.status !== 'pending') return 'skipped';
+    if (msg.status !== 'pending') return { outcome: 'skipped' };
 
     const runId = msg.aggregateKey;
     const roomId = msg.destination;
@@ -113,9 +126,9 @@ async function deliverOne(
     const run = runRes.rows[0];
     if (!run) {
       await markTerminal(client, msg.id, 'dead', msg.attempts);
-      return 'failed';
+      return { outcome: 'failed' };
     }
-    if ((run.owner_id as string) !== tenant.userId) return 'skipped';
+    if ((run.owner_id as string) !== tenant.userId) return { outcome: 'skipped' };
 
     // Load the persisted explicit binding: the room must be bound to this
     // workspace by the run owner. The outbox destination is not trusted alone.
@@ -126,7 +139,7 @@ async function deliverOne(
     const binding = bindingRes.rows[0];
     if (!binding) {
       await markTerminal(client, msg.id, 'dead', msg.attempts);
-      return 'failed';
+      return { outcome: 'failed' };
     }
 
     // Load the event payload to render.
@@ -137,7 +150,7 @@ async function deliverOne(
     const eventRow = eventRes.rows[0];
     if (!eventRow) {
       await markTerminal(client, msg.id, 'dead', msg.attempts);
-      return 'failed';
+      return { outcome: 'failed' };
     }
 
     // Decrypt the owner's session token.
@@ -147,7 +160,7 @@ async function deliverOne(
     } catch (error) {
       if (isMatrixTokenUnavailable(error)) {
         await markTerminal(client, msg.id, 'failed', msg.attempts);
-        return 'failed';
+        return { outcome: 'failed' };
       }
       throw error;
     }
@@ -177,13 +190,21 @@ async function deliverOne(
           WHERE ${OUTBOX_MESSAGES.id} = $2`,
         [result.eventId, msg.id],
       );
-      return 'delivered';
+      return { outcome: 'delivered' };
     } catch (error) {
       if (isRetryableMatrixError(error)) {
-        throw error;
+        await client.query(
+          `UPDATE ${OUTBOX_MESSAGES.table}
+              SET ${OUTBOX_MESSAGES.attempts} = $1,
+                  ${OUTBOX_MESSAGES.nextAttemptAt} = now() + ($2 * interval '1 second'),
+                  ${OUTBOX_MESSAGES.updatedAt} = now()
+            WHERE ${OUTBOX_MESSAGES.id} = $3`,
+          [msg.attempts + 1, retryDelaySeconds(msg.attempts), msg.id],
+        );
+        return { retryableError: error };
       }
       await markTerminal(client, msg.id, 'failed', msg.attempts + 1);
-      return 'failed';
+      return { outcome: 'failed' };
     }
   });
 }
@@ -220,8 +241,12 @@ export async function deliverPending(
   let retryableError: unknown = null;
   for (const id of candidates) {
     try {
-      const outcome = await deliverOne(tenant, id, matrix);
-      report[outcome] += 1;
+      const result = await deliverOne(tenant, id, matrix);
+      if ('retryableError' in result) {
+        retryableError = result.retryableError;
+      } else {
+        report[result.outcome] += 1;
+      }
     } catch (error) {
       if (isRetryableMatrixError(error)) {
         retryableError = error;
@@ -244,16 +269,20 @@ export async function sweepPendingMatrixDeliveries(
   );
   const report = emptyReport();
   for (const row of rows) {
-    const tenantReport = await deliverPending(
-      {
-        userId: row.user_id as string,
-        workspaceId: row.workspace_id as string,
-      },
-      { matrix: options.matrix, batchSize: options.batchSize },
-    );
-    report.delivered += tenantReport.delivered;
-    report.failed += tenantReport.failed;
-    report.skipped += tenantReport.skipped;
+    try {
+      const tenantReport = await deliverPending(
+        {
+          userId: row.user_id as string,
+          workspaceId: row.workspace_id as string,
+        },
+        { matrix: options.matrix, batchSize: options.batchSize },
+      );
+      report.delivered += tenantReport.delivered;
+      report.failed += tenantReport.failed;
+      report.skipped += tenantReport.skipped;
+    } catch (error) {
+      if (!isRetryableMatrixError(error)) throw error;
+    }
   }
   return report;
 }
