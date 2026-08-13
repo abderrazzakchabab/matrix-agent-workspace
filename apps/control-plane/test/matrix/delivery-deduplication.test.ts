@@ -86,6 +86,23 @@ beforeAll(async () => {
   );
 });
 
+async function waitForBlockedTenantClaim(): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const { rows } = await getAdminPool().query(
+      `SELECT EXISTS (
+         SELECT 1
+           FROM pg_stat_activity
+          WHERE usename = 'matrix_app'
+            AND wait_event_type = 'Lock'
+       ) AS blocked`,
+    );
+    if (rows[0]?.blocked === true) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('timed out waiting for blocked Matrix outbox claim');
+}
+
 async function makeRunWithProgressEvent(): Promise<{ runId: string; deliveryKey: string }> {
   const runId = `run_${randomUUID()}`;
   await createRun(
@@ -278,6 +295,58 @@ describe('Matrix delivery deduplication', () => {
     expect(retried.delivered).toBe(2);
     expect(client.sentKeys).toEqual([deliveryKey, laterDeliveryKey]);
     expect(client.attemptedKeys).toEqual([deliveryKey, deliveryKey, laterDeliveryKey]);
+  });
+
+  it('rejects a stale later candidate after an earlier sequence is deferred', async () => {
+    const { runId, deliveryKey } = await makeRunWithProgressEvent();
+    const laterEvent = await publishEvent(
+      { userId: ownerId, workspaceId },
+      runId,
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'run.completed',
+        version: 1,
+        payload: { summary: 'done' },
+      },
+    );
+    const laterDeliveryKey = `${runId}:${laterEvent.sequence}:${ROOM_ID}`;
+    const lockClient = await getAdminPool().connect();
+    const client = new FixtureMatrixClient();
+    let drain: Promise<{ delivered: number }> | undefined;
+    let transactionOpen = false;
+
+    try {
+      await lockClient.query('BEGIN');
+      transactionOpen = true;
+      await lockClient.query(
+        'SELECT id FROM outbox_messages WHERE delivery_key = $1 FOR UPDATE',
+        [deliveryKey],
+      );
+
+      drain = deliverPending({ userId: ownerId, workspaceId }, { matrix: client });
+      await waitForBlockedTenantClaim();
+      await lockClient.query(
+        `UPDATE outbox_messages
+            SET attempts = attempts + 1,
+                next_attempt_at = now() + interval '5 seconds'
+          WHERE delivery_key = $1`,
+        [deliveryKey],
+      );
+      await lockClient.query('COMMIT');
+      transactionOpen = false;
+
+      expect((await drain).delivered).toBe(0);
+      expect(client.attemptedKeys).toEqual([]);
+      const later = await getAdminPool().query(
+        'SELECT status FROM outbox_messages WHERE delivery_key = $1',
+        [laterDeliveryKey],
+      );
+      expect(later.rows).toEqual([{ status: 'pending' }]);
+    } finally {
+      if (transactionOpen) await lockClient.query('ROLLBACK').catch(() => undefined);
+      lockClient.release();
+      await drain?.catch(() => undefined);
+    }
   });
 
   it('defers rejected fetch transport failures for retry', async () => {

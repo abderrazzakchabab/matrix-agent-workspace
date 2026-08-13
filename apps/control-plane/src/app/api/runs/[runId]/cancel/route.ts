@@ -48,7 +48,7 @@ export async function POST(
 
     const result = await withTenant(auth.userId, async (client) => {
       const { rows } = await client.query(
-        'SELECT status, cancel_requested_at, workspace_id FROM runs WHERE id = $1 FOR UPDATE',
+        'SELECT status, cancel_requested_at, workspace_id, owner_id FROM runs WHERE id = $1 FOR UPDATE',
         [runId],
       );
       const run = rows[0] ?? null;
@@ -95,6 +95,7 @@ export async function POST(
         kind: 'updated' as const,
         status: newStatus,
         workspaceId: run.workspace_id as string,
+        ownerId: run.owner_id as string,
         outboxEnqueued,
       };
     });
@@ -104,7 +105,7 @@ export async function POST(
     if (result.outboxEnqueued) {
       await dispatchMatrixDeliveryRequested({
         workspaceId: result.workspaceId,
-        userId: auth.userId,
+        userId: result.ownerId,
         runId,
       });
     }

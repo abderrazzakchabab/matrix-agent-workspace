@@ -103,12 +103,20 @@ async function deliverOne(
 ): Promise<DeliveryAttemptResult> {
   return withTenant(tenant.userId, async (client) => {
     const claimed = await client.query(
-      `SELECT * FROM ${OUTBOX_MESSAGES.table}
-        WHERE ${OUTBOX_MESSAGES.id} = $1
-          AND ${OUTBOX_MESSAGES.status} = 'pending'
-          AND (${OUTBOX_MESSAGES.nextAttemptAt} IS NULL
-               OR ${OUTBOX_MESSAGES.nextAttemptAt} <= now())
-        FOR UPDATE`,
+      `SELECT candidate.* FROM ${OUTBOX_MESSAGES.table} candidate
+        WHERE candidate.${OUTBOX_MESSAGES.id} = $1
+          AND candidate.${OUTBOX_MESSAGES.status} = 'pending'
+          AND (candidate.${OUTBOX_MESSAGES.nextAttemptAt} IS NULL
+               OR candidate.${OUTBOX_MESSAGES.nextAttemptAt} <= now())
+          AND NOT EXISTS (
+            SELECT 1
+              FROM ${OUTBOX_MESSAGES.table} earlier
+             WHERE earlier.${OUTBOX_MESSAGES.aggregateKey} = candidate.${OUTBOX_MESSAGES.aggregateKey}
+               AND earlier.${OUTBOX_MESSAGES.destination} = candidate.${OUTBOX_MESSAGES.destination}
+               AND earlier.${OUTBOX_MESSAGES.status} = 'pending'
+               AND earlier.${OUTBOX_MESSAGES.eventSequence} < candidate.${OUTBOX_MESSAGES.eventSequence}
+          )
+        FOR UPDATE OF candidate`,
       [messageId],
     );
     if (claimed.rows.length === 0) return { outcome: 'skipped' };

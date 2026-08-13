@@ -6,6 +6,7 @@ import { POST as postRunHandler } from '../../src/app/api/workspaces/[workspaceI
 import { GET as getRunHandler } from '../../src/app/api/runs/[runId]/route';
 import { POST as cancelRunHandler } from '../../src/app/api/runs/[runId]/cancel/route';
 import { dispatchRunRequested } from '../../src/inngest/client';
+import { dispatchMatrixDeliveryRequested } from '../../src/inngest/functions/deliver-matrix-event';
 import {
   setupFixture,
   ALICE,
@@ -28,7 +29,18 @@ vi.mock('../../src/inngest/client', async (importOriginal) => {
   };
 });
 
+vi.mock('../../src/inngest/functions/deliver-matrix-event', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('../../src/inngest/functions/deliver-matrix-event')
+  >();
+  return {
+    ...actual,
+    dispatchMatrixDeliveryRequested: vi.fn(async () => true),
+  };
+});
+
 const dispatchMock = vi.mocked(dispatchRunRequested);
+const matrixDispatchMock = vi.mocked(dispatchMatrixDeliveryRequested);
 const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
 type ApiErrorBody = { error: { code: string; message: string } };
 type RunBody = {
@@ -49,6 +61,7 @@ const readJson = async <T,>(res: NextResponse): Promise<T> => (await res.json())
 let aliceCookie: string;
 let bobCookie: string;
 let aliceUserId: string;
+let bobUserId: string;
 let workspaceId: string;
 let roomId: string;
 
@@ -60,6 +73,7 @@ beforeAll(async () => {
   aliceCookie = sessionCookie(aliceSession);
   bobCookie = sessionCookie(bobSession);
   aliceUserId = await internalUserId(ALICE.userId);
+  bobUserId = await internalUserId(BOB.userId);
 
   const ws = await postWorkspace({ name: 'Run Workspace', cookie: aliceCookie });
   expect(ws.status).toBe(201);
@@ -341,6 +355,32 @@ describe('POST /api/runs/:runId/cancel', () => {
 
     const fetched = await getRun(runId, aliceCookie);
     expect((await readJson<RunBody>(fetched)).status).toBe('cancelled');
+  });
+
+  it('dispatches queued cancellation delivery as the run owner for a workspace member', async () => {
+    const created = await postRun(workspaceId, aliceCookie, validBody());
+    const runId = (await readJson<RunBody>(created)).runId;
+    await getAdminPool().query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role)
+       VALUES ($1, $2, 'viewer')`,
+      [workspaceId, bobUserId],
+    );
+    matrixDispatchMock.mockClear();
+
+    try {
+      const res = await cancelRun(runId, bobCookie);
+      expect(res.status).toBe(202);
+      expect(matrixDispatchMock).toHaveBeenCalledExactlyOnceWith({
+        workspaceId,
+        userId: aliceUserId,
+        runId,
+      });
+    } finally {
+      await getAdminPool().query(
+        'DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
+        [workspaceId, bobUserId],
+      );
+    }
   });
 
   it('records intent for a running run and emits one cancellation_requested event', async () => {
