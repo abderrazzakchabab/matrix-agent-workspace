@@ -58,6 +58,12 @@ interface MatrixMessage {
   content?: { body?: string; msgtype?: string };
 }
 
+interface OutboxDeliveryState {
+  total: number;
+  pending: number;
+  delivered: number;
+}
+
 function sessionCookie(setCookie: string | undefined): string {
   const match = /(?:^|,\s*)(matrix_session=[^;]+)/.exec(setCookie ?? '');
   if (!match) throw new Error(`missing matrix_session cookie: ${setCookie ?? '(none)'}`);
@@ -195,24 +201,50 @@ async function roomMessages(accessToken: string, roomId: string): Promise<Matrix
   return (JSON.parse(text) as { chunk: MatrixMessage[] }).chunk;
 }
 
-async function waitForMatrixTerminal(
+async function waitForSettledMatrixTerminal(
   accessToken: string,
   roomId: string,
   runId: string,
 ): Promise<string[]> {
-  const deadline = Date.now() + 30_000;
+  const deliveryDeadline = Date.now() + 30_000;
+  let deliveryState: OutboxDeliveryState | undefined;
+  while (Date.now() < deliveryDeadline) {
+    const result = await getAdminPool().query(
+      `SELECT count(*)::int AS total,
+              count(*) FILTER (WHERE status = 'pending')::int AS pending,
+              count(*) FILTER (WHERE status = 'delivered')::int AS delivered
+         FROM outbox_messages WHERE aggregate_key = $1`,
+      [runId],
+    );
+    deliveryState = result.rows[0] as OutboxDeliveryState;
+    if (deliveryState.total > 0 && deliveryState.pending === 0) {
+      expect(deliveryState.delivered, JSON.stringify(deliveryState)).toBe(deliveryState.total);
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  if (!deliveryState || deliveryState.total === 0 || deliveryState.pending !== 0) {
+    throw new Error(
+      `Matrix outbox did not settle for ${runId}; state=${JSON.stringify(deliveryState)}`,
+    );
+  }
+
+  const stabilityDeadline = Date.now() + 1_000;
   let bodies: string[] = [];
-  while (Date.now() < deadline) {
+  do {
     bodies = (await roomMessages(accessToken, roomId))
       .filter((event) => event.type === 'm.room.message')
       .map((event) => event.content?.body ?? '')
       .filter((body) => body.includes(runId));
-    if (bodies.some((body) => /Run (completed|failed|partially completed|cancelled)/.test(body))) {
-      return bodies;
+    if (Date.now() < stabilityDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
     }
-    await new Promise((resolve) => setTimeout(resolve, 150));
+  } while (Date.now() < stabilityDeadline);
+
+  if (!bodies.some((body) => /Run (completed|failed|partially completed|cancelled)/.test(body))) {
+    throw new Error(`no Matrix terminal message for ${runId}; messages=${JSON.stringify(bodies)}`);
   }
-  throw new Error(`no Matrix terminal message for ${runId}; messages=${JSON.stringify(bodies)}`);
+  return bodies;
 }
 
 async function seedWorkspaceIntegrations(workspaceId: string): Promise<string> {
@@ -409,7 +441,7 @@ test('Phase B backend contract is durable, replayable, Matrix-first, and GitHub 
   );
   expect(new Set(reconnected.map((event) => event.sequence)).size).toBe(reconnected.length);
 
-  const parallelMatrix = await waitForMatrixTerminal(aliceToken, roomId, parallel.runId);
+  const parallelMatrix = await waitForSettledMatrixTerminal(aliceToken, roomId, parallel.runId);
   expect(parallelMatrix.some((body) => body.includes('specialist.completed'))).toBe(true);
   expect(terminalBodies(parallelMatrix)).toHaveLength(1);
 
@@ -430,7 +462,7 @@ test('Phase B backend contract is durable, replayable, Matrix-first, and GitHub 
       errorCode: 'PROVIDER_PERMANENT',
     }),
   ]);
-  expect(terminalBodies(await waitForMatrixTerminal(aliceToken, roomId, partial.runId))).toHaveLength(1);
+  expect(terminalBodies(await waitForSettledMatrixTerminal(aliceToken, roomId, partial.runId))).toHaveLength(1);
 
   // Retry the same public request key: it resolves to the original run without another dispatch.
   const idempotentRetry = await request.post(
@@ -481,7 +513,7 @@ test('Phase B backend contract is durable, replayable, Matrix-first, and GitHub 
   expect(
     interruptionEvents.rows.find((row) => row.event_type === 'specialist.completed')?.count,
   ).toBe(3);
-  const interruptionMatrix = await waitForMatrixTerminal(
+  const interruptionMatrix = await waitForSettledMatrixTerminal(
     aliceToken,
     roomId,
     interrupted.runId,
@@ -513,7 +545,7 @@ test('Phase B backend contract is durable, replayable, Matrix-first, and GitHub 
   expect(cancelledResult.status).toBe('cancelled');
   const cancelledSse = await readSse(cookie, cancelled.runId);
   expect(cancelledSse.filter((event) => event.type === 'run.cancelled')).toHaveLength(1);
-  expect(terminalBodies(await waitForMatrixTerminal(aliceToken, roomId, cancelled.runId))).toHaveLength(1);
+  expect(terminalBodies(await waitForSettledMatrixTerminal(aliceToken, roomId, cancelled.runId))).toHaveLength(1);
 
   // Link the Matrix identity to GitHub OAuth, then read through an authorized installation.
   for (const path of ['/user', '/installation/repositories']) {
