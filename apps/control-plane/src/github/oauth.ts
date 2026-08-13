@@ -149,6 +149,21 @@ export class GithubOAuthError extends Error {
   }
 }
 
+const DEFAULT_PHASE_B_OAUTH_SCOPES = ['read:user'] as const;
+const PHASE_B_OAUTH_SCOPE_ALLOWLIST = new Set<string>(DEFAULT_PHASE_B_OAUTH_SCOPES);
+
+function validatePhaseBOAuthScopes(scopes: readonly string[], status: number): string[] {
+  const normalized = [...new Set(scopes.map((scope) => scope.trim()).filter(Boolean))];
+  if (normalized.some((scope) => !PHASE_B_OAUTH_SCOPE_ALLOWLIST.has(scope))) {
+    throw new GithubOAuthError(
+      'GITHUB_OAUTH_SCOPE_NOT_ALLOWED',
+      status,
+      'GitHub OAuth scope is not permitted',
+    );
+  }
+  return normalized;
+}
+
 export interface OAuthStateService {
   issue(binding: OAuthSessionBinding): Promise<string>;
   consume(state: string, binding: OAuthSessionBinding): Promise<void>;
@@ -296,10 +311,10 @@ export function githubOAuthConfigFromEnv(): GithubOAuthConfig {
     authorizeUrl: process.env.GITHUB_OAUTH_AUTHORIZE_URL ?? 'https://github.com/login/oauth/authorize',
     tokenUrl: process.env.GITHUB_OAUTH_TOKEN_URL ?? 'https://github.com/login/oauth/access_token',
     apiBaseUrl: (process.env.GITHUB_API_URL ?? 'https://api.github.com').replace(/\/$/, ''),
-    scopes: (process.env.GITHUB_OAUTH_SCOPES ?? 'read:user')
-      .split(/[ ,]+/)
-      .map((scope) => scope.trim())
-      .filter(Boolean),
+    scopes: validatePhaseBOAuthScopes(
+      (process.env.GITHUB_OAUTH_SCOPES ?? DEFAULT_PHASE_B_OAUTH_SCOPES.join(' ')).split(/[ ,]+/),
+      500,
+    ),
   };
 }
 
@@ -321,6 +336,10 @@ export function createGithubOAuthService(options: {
 }): GithubOAuthService {
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const now = options.now ?? Date.now;
+  const requestedScopes = validatePhaseBOAuthScopes(
+    options.config.scopes ?? DEFAULT_PHASE_B_OAUTH_SCOPES,
+    500,
+  );
   return {
     async start(binding) {
       const state = await options.states.issue(binding);
@@ -328,7 +347,7 @@ export function createGithubOAuthService(options: {
       url.searchParams.set('client_id', options.config.clientId);
       url.searchParams.set('redirect_uri', options.config.callbackUrl);
       url.searchParams.set('state', state);
-      url.searchParams.set('scope', (options.config.scopes ?? ['read:user']).join(' '));
+      url.searchParams.set('scope', requestedScopes.join(' '));
       return { state, authorizationUrl: url.toString() };
     },
 
@@ -371,6 +390,14 @@ export function createGithubOAuthService(options: {
         throw new GithubOAuthError();
       }
       if (typeof token.access_token !== 'string' || token.error) throw new GithubOAuthError();
+      if (typeof token.scope !== 'string') {
+        throw new GithubOAuthError(
+          'GITHUB_OAUTH_SCOPE_NOT_ALLOWED',
+          502,
+          'GitHub OAuth scope is not permitted',
+        );
+      }
+      const scopes = validatePhaseBOAuthScopes(token.scope.split(/[ ,]+/), 502);
 
       let userResponse: GithubFetchResponse;
       try {
@@ -403,10 +430,6 @@ export function createGithubOAuthService(options: {
         typeof token.refresh_token === 'string'
           ? await options.cipher.encrypt(token.refresh_token)
           : null;
-      const scopes =
-        typeof token.scope === 'string'
-          ? token.scope.split(',').map((scope) => scope.trim()).filter(Boolean)
-          : [];
       const expiresAt =
         typeof token.expires_in === 'number'
           ? new Date(now() + token.expires_in * 1000).toISOString()
