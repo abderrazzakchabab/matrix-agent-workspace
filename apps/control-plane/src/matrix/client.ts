@@ -89,7 +89,15 @@ export class SynapseDeliveryClient implements MatrixDeliveryClient {
     if (!res.ok) {
       throw new MatrixSendError(`Matrix send failed with ${res.status}`, res.status, false);
     }
-    const data = (await res.json()) as { event_id?: string };
+    let data: { event_id?: string };
+    try {
+      data = (await res.json()) as { event_id?: string };
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new MatrixSendError('Matrix send returned invalid JSON', res.status, false);
+      }
+      throw new MatrixSendError('Matrix send response transport failed', 0, true);
+    }
     return { eventId: data.event_id ?? txnId };
   }
 }
