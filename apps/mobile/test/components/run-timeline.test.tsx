@@ -75,6 +75,17 @@ describe('RunTimeline', () => {
     }
   });
 
+  it('keeps completed copy neutral until Matrix delivery is confirmed', () => {
+    const store = createRunStore();
+    add(store, 1, 'run.completed');
+
+    const screen = render(<TerminalResult run={store.get('run-1')} />);
+
+    expect(screen.getByText('The final result is available for this run.')).toBeTruthy();
+    expect(screen.queryByText(/bound Matrix room/i)).toBeNull();
+    expect(screen.queryByText('Delivered to Matrix')).toBeNull();
+  });
+
   it('correlates a Matrix marker that arrives before its SSE event', () => {
     const store = createRunStore();
     store.get('run-1');

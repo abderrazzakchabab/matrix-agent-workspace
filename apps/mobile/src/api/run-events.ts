@@ -1,3 +1,4 @@
+import { fetch as expoFetch } from 'expo/fetch';
 import type { SessionStore } from '../auth/session-store';
 import { expireControlPlaneSession } from './control-plane';
 import type { RunStore } from '../state/run-store';
@@ -99,7 +100,7 @@ export function createRunEventClient(options: {
   cancelSchedule?: (handle: unknown) => void;
 }): RunEventClient {
   const baseUrl = normalizedBaseUrl(options.baseUrl);
-  const fetchImpl = options.fetch ?? (globalThis.fetch as unknown as RunEventsFetch);
+  const fetchImpl = options.fetch ?? (expoFetch as unknown as RunEventsFetch);
   const random = options.random ?? Math.random;
   const baseDelayMs = Math.max(100, options.baseDelayMs ?? 500);
   const maxDelayMs = Math.max(baseDelayMs, options.maxDelayMs ?? 8_000);

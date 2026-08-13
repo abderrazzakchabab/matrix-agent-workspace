@@ -32,6 +32,10 @@ describe('RunScreen flow', () => {
     const dispose = vi.fn();
     const eventClient: RunEventClient = { connect: vi.fn(() => ({ dispose })) };
     const cancelRun = vi.fn(async () => ({ runId: 'run-1', status: 'cancellation_requested' as const }));
+    const getRunMatrixDeliveries = vi.fn(async () => ({
+      runId: 'run-1',
+      deliveries: [{ sequence: 9, status: 'delivered' as const }],
+    }));
     const screen = render(
       <RunScreen
         runId="run-1"
@@ -40,7 +44,7 @@ describe('RunScreen flow', () => {
         specialistNames={{ 'repo-reader': 'Repository reader', 'issue-reader': 'Issue reader' }}
         store={store}
         eventClient={eventClient}
-        controlPlane={{ cancelRun }}
+        controlPlane={{ cancelRun, getRunMatrixDeliveries }}
       />,
     );
 
@@ -50,12 +54,12 @@ describe('RunScreen flow', () => {
     expect(dispose).not.toHaveBeenCalled();
 
     store.addEvent(terminal('run-1', 9, 'run.cancelled'));
-    store.markMatrixDelivered({ runId: 'run-1', sequence: 9 });
 
     await waitFor(() => {
       expect(screen.getAllByLabelText('Run Cancelled')).toHaveLength(1);
       expect(screen.getAllByText('Delivered to Matrix')).toHaveLength(1);
     });
+    expect(getRunMatrixDeliveries).toHaveBeenCalledWith('run-1');
     expect(screen.getAllByRole('status')).toHaveLength(2); // cancellation request + terminal result
   });
 
@@ -73,7 +77,10 @@ describe('RunScreen flow', () => {
         specialistNames={{ 'repo-reader': 'Repository reader' }}
         store={store}
         eventClient={{ connect: () => ({ dispose: vi.fn() }) }}
-        controlPlane={{ cancelRun }}
+        controlPlane={{
+          cancelRun,
+          getRunMatrixDeliveries: async () => ({ runId: 'run-2', deliveries: [] }),
+        }}
       />,
     );
 

@@ -54,6 +54,7 @@ type RunBody = {
   lastSequence?: number;
   cancelRequestedAt?: string | null;
   terminalSummary?: Record<string, unknown> | null;
+  matrixDeliveries?: Array<{ sequence: number; status: string }>;
   specialists?: Array<{ specialistId: string; ordinal: number; status: string }>;
 };
 const readJson = async <T,>(res: NextResponse): Promise<T> => (await res.json()) as T;
@@ -289,6 +290,7 @@ describe('GET /api/runs/:runId', () => {
       roomId,
       lastSequence: 1,
       cancelRequestedAt: null,
+      matrixDeliveries: [{ sequence: 1, status: 'pending' }],
     });
     expect((body.specialists ?? []).map((s: { specialistId: string }) => s.specialistId)).toEqual([
       'repo-reader',

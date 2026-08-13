@@ -50,6 +50,13 @@ export interface CancellationResponse {
   status: 'cancellation_requested';
 }
 
+export type MatrixDeliveryStatus = 'pending' | 'delivered' | 'failed' | 'dead';
+
+export interface RunMatrixDeliveriesResponse {
+  runId: string;
+  deliveries: Array<{ sequence: number; status: MatrixDeliveryStatus }>;
+}
+
 export interface ControlPlaneApi {
   createMatrixSession(homeserverUrl: string, accessToken: string): Promise<MatrixSessionResponse>;
   getRooms(): Promise<RoomSummary[]>;
@@ -60,6 +67,7 @@ export interface ControlPlaneApi {
     idempotencyKey: string,
   ): Promise<RunResponseType>;
   cancelRun(runId: string): Promise<CancellationResponse>;
+  getRunMatrixDeliveries(runId: string): Promise<RunMatrixDeliveriesResponse>;
 }
 
 interface ApiErrorBody {
@@ -185,6 +193,14 @@ export function createControlPlaneClient(options: {
         `/api/runs/${encodeURIComponent(runId)}/cancel`,
         { method: 'POST' },
       );
+    },
+
+    async getRunMatrixDeliveries(runId) {
+      const body = await authenticatedRequest<{
+        runId: string;
+        matrixDeliveries: RunMatrixDeliveriesResponse['deliveries'];
+      }>(`/api/runs/${encodeURIComponent(runId)}`);
+      return { runId: body.runId, deliveries: body.matrixDeliveries };
     },
   };
 }

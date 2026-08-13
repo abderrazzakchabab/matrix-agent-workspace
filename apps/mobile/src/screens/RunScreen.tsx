@@ -14,11 +14,13 @@ interface RunScreenProps {
   specialistNames: Readonly<Record<string, string>>;
   store: RunStore;
   eventClient: RunEventClient;
-  controlPlane: Pick<ControlPlaneApi, 'cancelRun'>;
+  controlPlane: Pick<ControlPlaneApi, 'cancelRun' | 'getRunMatrixDeliveries'>;
   matrixDeliveryMarkers?: readonly MatrixDeliveryMarker[];
 }
 
 type CancellationState = 'idle' | 'pending' | 'requested' | 'error';
+
+const MATRIX_DELIVERY_POLL_MS = 1_000;
 
 export function RunScreen({
   runId,
@@ -46,6 +48,43 @@ export function RunScreen({
       if (marker.runId === runId) store.markMatrixDelivered(marker);
     }
   }, [matrixDeliveryMarkers, runId, store]);
+
+  useEffect(() => {
+    let disposed = false;
+    let pollHandle: ReturnType<typeof setTimeout> | undefined;
+
+    async function poll(): Promise<void> {
+      let terminalDeliverySettled = false;
+      try {
+        const response = await controlPlane.getRunMatrixDeliveries(runId);
+        if (disposed) return;
+        if (response.runId === runId) {
+          for (const delivery of response.deliveries) {
+            if (delivery.status === 'delivered') {
+              store.markMatrixDelivered({ runId, sequence: delivery.sequence });
+            }
+          }
+          const currentTerminal = terminalEvent(store.get(runId));
+          const terminalDelivery = currentTerminal
+            ? response.deliveries.find((delivery) => delivery.sequence === currentTerminal.sequence)
+            : undefined;
+          terminalDeliverySettled = terminalDelivery !== undefined
+            && terminalDelivery.status !== 'pending';
+        }
+      } catch {
+        terminalDeliverySettled = false;
+      }
+      if (!disposed && !terminalDeliverySettled) {
+        pollHandle = setTimeout(() => void poll(), MATRIX_DELIVERY_POLL_MS);
+      }
+    }
+
+    void poll();
+    return () => {
+      disposed = true;
+      if (pollHandle !== undefined) clearTimeout(pollHandle);
+    };
+  }, [controlPlane, runId, store]);
 
   async function requestCancellation(): Promise<void> {
     if (cancellation === 'pending' || cancellation === 'requested' || terminal) return;

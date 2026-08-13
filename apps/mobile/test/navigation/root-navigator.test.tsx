@@ -11,6 +11,9 @@ const secureStore = vi.hoisted(() => ({
 
 vi.mock('expo-secure-store', () => secureStore);
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-random-uuid' }));
+vi.mock('expo/fetch', () => ({
+  fetch: (input: string, init?: RequestInit) => globalThis.fetch(input, init),
+}));
 vi.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -113,6 +116,17 @@ describe('RootNavigator', () => {
           }),
         };
       }
+      if (path === '/api/runs/run_1' && (!init?.method || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: async () => ({
+            runId: 'run_1',
+            matrixDeliveries: [{ sequence: 1, status: 'delivered' }],
+          }),
+        };
+      }
       if (path === '/api/runs/run_1/events' && init?.method === 'GET') {
         const event = {
           id: 'evt_run_1_1',
@@ -166,5 +180,6 @@ describe('RootNavigator', () => {
     });
     expect(await screen.findByText('Live progress')).toBeTruthy();
     expect(await screen.findByLabelText('Run Completed')).toBeTruthy();
+    expect(await screen.findAllByText('Delivered to Matrix')).toHaveLength(1);
   });
 });

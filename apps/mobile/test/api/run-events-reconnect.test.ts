@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+
+const expoFetch = vi.hoisted(() => vi.fn());
+
+vi.mock('expo/fetch', () => ({ fetch: expoFetch }));
+
 import { createRunEventClient, type RunEventsFetch } from '../../src/api/run-events';
 import { createRunStore } from '../../src/state/run-store';
 
@@ -47,6 +52,52 @@ async function eventually(assertion: () => void) {
 }
 
 describe('mobile run event replay', () => {
+  it('uses Expo fetch and consumes native response chunks before the stream closes', async () => {
+    const store = createRunStore();
+    let readCount = 0;
+    let finishStream: (() => void) | undefined;
+    let streamClosed = false;
+    expoFetch.mockImplementationOnce(async () => ({
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: async () => {
+            readCount += 1;
+            if (readCount === 1) {
+              return {
+                done: false as const,
+                value: new TextEncoder().encode(
+                  `id: 1\nevent: specialist.progress\ndata: ${JSON.stringify(event(1))}\n\n`,
+                ),
+              };
+            }
+            return new Promise<{ done: true; value: undefined }>((resolve) => {
+              finishStream = () => {
+                streamClosed = true;
+                resolve({ done: true, value: undefined });
+              };
+            });
+          },
+        }),
+      },
+      text: async () => '',
+    }));
+    const client = createRunEventClient({
+      baseUrl: 'https://control.example.test',
+      sessionStore: { load: async () => ({ cookie: 'opaque-session' }), save: vi.fn(), clear: vi.fn() },
+      store,
+    });
+
+    const connection = client.connect('run-1');
+    await eventually(() => expect(store.get('run-1').highestSequence).toBe(1));
+
+    expect(expoFetch).toHaveBeenCalledOnce();
+    expect(streamClosed).toBe(false);
+    finishStream?.();
+    connection.dispose();
+  });
+
   it('parses multiline SSE and reconnects from the highest sequence without duplicates', async () => {
     const requests: Array<{ input: string; init?: { headers?: Record<string, string> } }> = [];
     const fetch = vi.fn<RunEventsFetch>(async (input, init) => {

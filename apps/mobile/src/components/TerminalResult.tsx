@@ -9,7 +9,7 @@ interface TerminalResultProps {
 const TERMINAL: Readonly<Record<string, { title: string; action: string }>> = {
   'run.completed': {
     title: 'Completed',
-    action: 'The final result is available in this run and the bound Matrix room.',
+    action: 'The final result is available for this run.',
   },
   'run.partial': {
     title: 'Partially completed',
