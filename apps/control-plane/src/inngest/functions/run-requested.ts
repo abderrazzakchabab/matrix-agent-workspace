@@ -52,15 +52,12 @@ export const runRequested = inngest.createFunction(
       // config snapshot; a mismatch fails the run without executing anything.
       const expectedKey = computeExecutionKey(run.id, run.promptHash, run.configSnapshot);
       if (expectedKey !== data.executionKey) {
-        const applied = await runStore.finalize(run.id, 'failed', {
-          code: 'EXECUTION_KEY_MISMATCH',
-        });
-        if (applied !== null) {
-          await events.append('run.failed', {
-            code: 'EXECUTION_KEY_MISMATCH',
-            untrusted: false,
-          });
-        }
+        await runStore.finalize(
+          run.id,
+          'failed',
+          { code: 'EXECUTION_KEY_MISMATCH' },
+          { type: 'run.failed', payload: { code: 'EXECUTION_KEY_MISMATCH', untrusted: false } },
+        );
         return { status: 'failed', code: 'EXECUTION_KEY_MISMATCH' };
       }
 

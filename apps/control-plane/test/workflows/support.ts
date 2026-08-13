@@ -156,11 +156,12 @@ export interface TestServices {
 export function makeServices(runId: string): TestServices {
   const clock = makeClock();
   const sleeps: number[] = [];
+  const events = new InMemoryWorkflowEventSink(runId);
   return {
     provider: new DeterministicProvider(),
     checkpoints: new InMemoryCheckpointStore(),
-    runStore: new InMemoryWorkflowRunStore('queued'),
-    events: new InMemoryWorkflowEventSink(runId),
+    runStore: new InMemoryWorkflowRunStore('queued', events),
+    events,
     cancellation: new InMemoryCancellationController(),
     clock,
     sleeps,

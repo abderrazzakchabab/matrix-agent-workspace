@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession, toErrorResponse, withTenant } from '../../../../../auth/authorization';
-import { appendEvent } from '../../../../../db/repositories/event-repository';
+import { appendEventWithClient } from '../../../../../db/repositories/event-repository';
 
 class RunNotFoundError extends Error {
   readonly code = 'RUN_NOT_FOUND';
@@ -44,61 +44,54 @@ export async function POST(
     const { runId } = await context.params;
     const auth = await requireSession(request);
 
-    const run = await withTenant(auth.userId, async (client) => {
-      const { rows } = await client.query('SELECT * FROM runs WHERE id = $1', [runId]);
-      return rows[0] ?? null;
-    });
-    if (!run) throw new RunNotFoundError();
-    if (TERMINAL_STATUSES.includes(run.status)) {
-      throw new RunAlreadyTerminalError(run.status);
-    }
-
-    // Record intent once. Queued runs are finalized immediately (the workflow
-    // will observe the terminal status and never start); running runs move to
-    // `cancelling` so the workflow can stop cooperatively.
-    const newlyRecorded = run.cancel_requested_at === null;
     const result = await withTenant(auth.userId, async (client) => {
       const { rows } = await client.query(
+        'SELECT status, cancel_requested_at FROM runs WHERE id = $1 FOR UPDATE',
+        [runId],
+      );
+      const run = rows[0] ?? null;
+      if (!run) return { kind: 'not_found' as const };
+      if (TERMINAL_STATUSES.includes(run.status)) {
+        return { kind: 'terminal' as const, status: run.status as string };
+      }
+
+      // The row lock serializes concurrent cancels, so the pre-update read is
+      // authoritative: only the first caller observes a NULL intent and emits.
+      const newlyRecorded = run.cancel_requested_at === null;
+      const updated = await client.query(
         `UPDATE runs
             SET cancel_requested_at = COALESCE(cancel_requested_at, now()),
                 status = CASE WHEN status = 'queued' THEN 'cancelled' ELSE 'cancelling' END,
                 updated_at = now()
           WHERE id = $1
-            AND status NOT IN ('completed', 'partial', 'failed', 'cancelled')
           RETURNING status`,
         [runId],
       );
-      return rows[0] ?? null;
-    });
-    if (!result) throw new RunAlreadyTerminalError(run.status);
-
-    if (newlyRecorded) {
-      if (result.status === 'cancelled') {
-        // Exactly one terminal cancellation event for a run cancelled before
-        // the workflow started; the workflow never emits a second one.
-        await appendEvent(
-          { userId: auth.userId, workspaceId: run.workspace_id },
-          runId,
-          {
+      const newStatus = (updated.rows[0]?.status as string | undefined) ?? (run.status as string);
+      if (newlyRecorded) {
+        if (newStatus === 'cancelled') {
+          // Exactly one terminal cancellation event for a run cancelled before
+          // the workflow started; the workflow never emits a second one.
+          await appendEventWithClient(client, runId, {
             id: `evt_${randomUUID()}`,
             type: 'run.cancelled',
             version: 1,
             payload: { cancelledAt: new Date().toISOString() },
-          },
-        );
-      } else {
-        await appendEvent(
-          { userId: auth.userId, workspaceId: run.workspace_id },
-          runId,
-          {
+          });
+        } else {
+          await appendEventWithClient(client, runId, {
             id: `evt_${randomUUID()}`,
             type: 'run.cancellation_requested',
             version: 1,
             payload: {},
-          },
-        );
+          });
+        }
       }
-    }
+      return { kind: 'updated' as const, status: newStatus };
+    });
+
+    if (result.kind === 'not_found') throw new RunNotFoundError();
+    if (result.kind === 'terminal') throw new RunAlreadyTerminalError(result.status);
 
     return NextResponse.json(
       { requestId, runId, status: 'cancellation_requested' },

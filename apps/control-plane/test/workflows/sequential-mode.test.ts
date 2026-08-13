@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { executeRun } from '../../src/workflows/run-workflow';
 import { ProviderPermanentError } from '../../src/agents/provider';
-import { makeServices, makeSpecialist, buildWorkflowOptions, newRunId } from './support';
+import { makeServices, makeSpecialist, buildWorkflowOptions, newRunId, SimulatedCrash } from './support';
 
 describe('sequential run mode', () => {
   it('executes specialists in declared order with typed prior results', async () => {
@@ -128,5 +128,45 @@ describe('sequential run mode', () => {
     const types = (await services.events.list()).map((e) => e.type);
     expect(types).toContain('run.partial');
     expect(types).not.toContain('run.completed');
+  });
+
+  it('seeds sequential prior results on resume from all checkpointed outcomes, failures included', async () => {
+    const runId = newRunId();
+    const services = makeServices(runId);
+    const a = makeSpecialist('a');
+    services.provider.program(
+      'a',
+      () => new ProviderPermanentError('provider rejected request'),
+    );
+    const b = makeSpecialist('b', { output: { summary: 'b-result' } });
+    const cInputs: unknown[] = [];
+    const c = makeSpecialist('c', {
+      output: { summary: 'c-result' },
+      recordInput: (i) => cInputs.push(i),
+    });
+    const { options } = buildWorkflowOptions({
+      runId,
+      mode: 'sequential',
+      specialists: [a, b, c],
+      failurePolicy: 'partial',
+      services,
+    });
+
+    // First execution: a fails, b completes, then the process crashes before c persists.
+    services.provider.program('c', () => new SimulatedCrash('crash before c persisted'));
+    await expect(executeRun(options)).rejects.toThrow(SimulatedCrash);
+
+    // Resume: c must see the failure marker for a and the completed output for b.
+    cInputs.length = 0;
+    services.provider.program('c', () => JSON.stringify({ summary: 'c-result' }));
+    const outcome = await executeRun(options);
+
+    expect(outcome.status).toBe('partial');
+    expect(cInputs).toHaveLength(1);
+    const priorResults = (cInputs[0] as { priorResults?: unknown[] }).priorResults;
+    expect(priorResults).toEqual([
+      { specialistId: 'a', status: 'failed', errorCode: 'PROVIDER_PERMANENT' },
+      { specialistId: 'b', status: 'completed', output: { summary: 'b-result' } },
+    ]);
   });
 });

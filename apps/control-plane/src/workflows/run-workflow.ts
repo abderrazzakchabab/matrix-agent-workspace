@@ -100,17 +100,24 @@ export interface PersistedSpecialistResult {
   completedAt?: number;
 }
 
+export interface TerminalEvent {
+  type: string;
+  payload: Record<string, unknown>;
+}
+
 /** Run-level persisted state with guarded transitions (terminal exactly once). */
 export interface WorkflowRunStore {
   getStatus(runId: string): Promise<string | null>;
   /** queued → running; returns the new status or null when not queued. */
   beginRun(runId: string): Promise<string | null>;
   setCancelling(runId: string): Promise<void>;
-  /** Guarded terminal transition; returns null when already terminal. */
+  /** Guarded terminal transition; persists the terminal event atomically with
+   * the transition so the event is emitted exactly once across crashes. */
   finalize(
     runId: string,
     status: TerminalRunStatus,
     summary?: Record<string, unknown> | null,
+    terminalEvent?: TerminalEvent,
   ): Promise<string | null>;
   saveSpecialistResult(runId: string, result: PersistedSpecialistResult): Promise<void>;
   loadSpecialistResults(runId: string): Promise<PersistedSpecialistResult[]>;
@@ -396,14 +403,16 @@ async function finalizeTerminal(
   await opts.services.provider.abort?.(opts.runId);
   const completedAt = opts.services.now();
   const summary = buildTerminalSummary(opts, results, status, completedAt);
-  const applied = await opts.services.runStore.finalize(opts.runId, status, summary);
+  const applied = await opts.services.runStore.finalize(opts.runId, status, summary, {
+    type: eventType,
+    payload: eventPayload,
+  });
   if (applied === null) {
     // Another execution (or the cancel route) already finalized this run:
     // never emit a second terminal event.
     const existing = await opts.services.runStore.getStatus(opts.runId);
     return resumeOutcome(opts, isTerminalStatus(existing) ? existing : status);
   }
-  await opts.services.events.append(eventType, eventPayload);
   await opts.services.checkpoints.save(
     opts.runId,
     'workflow:done',
@@ -703,13 +712,11 @@ export async function executeRun(opts: WorkflowOptions): Promise<WorkflowOutcome
         outcomes.push(item.value);
       }
     } else {
-      const priorResults: PriorSpecialistResult[] = outcomes
-        .filter((o) => o.status === 'completed')
-        .map((o) => ({
-          specialistId: o.specialistId,
-          status: 'completed',
-          output: o.output,
-        }));
+      const priorResults: PriorSpecialistResult[] = outcomes.map((o) =>
+        o.status === 'completed'
+          ? { specialistId: o.specialistId, status: 'completed', output: o.output }
+          : { specialistId: o.specialistId, status: 'failed', errorCode: o.errorCode },
+      );
       for (const spec of pending) {
         if (await services.cancellation.isCancelled(runId)) {
           return finalizeTerminal(opts, 'cancelled', outcomes, startedAt, 'run.cancelled', {
@@ -803,9 +810,11 @@ export class InMemoryWorkflowRunStore implements WorkflowRunStore {
   status: string;
   summary: Record<string, unknown> | null = null;
   results = new Map<string, PersistedSpecialistResult>();
+  private readonly events?: WorkflowEventSink;
 
-  constructor(initialStatus = 'queued') {
+  constructor(initialStatus = 'queued', events?: WorkflowEventSink) {
     this.status = initialStatus;
+    this.events = events;
   }
 
   async getStatus(): Promise<string | null> {
@@ -830,10 +839,14 @@ export class InMemoryWorkflowRunStore implements WorkflowRunStore {
     _runId: string,
     status: TerminalRunStatus,
     summary?: Record<string, unknown> | null,
+    terminalEvent?: TerminalEvent,
   ): Promise<string | null> {
     if (isTerminalStatus(this.status)) return null;
     this.status = status;
     this.summary = summary ?? null;
+    if (terminalEvent && this.events) {
+      await this.events.append(terminalEvent.type, terminalEvent.payload);
+    }
     return status;
   }
 
@@ -915,6 +928,7 @@ export function createPostgresWorkflowRunStore(tenant: TenantContext): WorkflowR
       runId: string,
       status: TerminalRunStatus,
       summary?: Record<string, unknown> | null,
+      terminalEvent?: TerminalEvent,
     ): Promise<string | null> {
       return withTenant(tenant.userId, async (client) => {
         const { rows } = await client.query(
@@ -927,7 +941,18 @@ export function createPostgresWorkflowRunStore(tenant: TenantContext): WorkflowR
             RETURNING status`,
           [status, summary ? JSON.stringify(summary) : null, runId, tenant.workspaceId],
         );
-        return rows[0] ? (rows[0].status as string) : null;
+        if (rows.length === 0) return null;
+        if (terminalEvent) {
+          await client.query('SELECT append_run_event($1, $2, $3, $4, $5, $6)', [
+            runId,
+            `evt_${randomUUID()}`,
+            terminalEvent.type,
+            1,
+            JSON.stringify(terminalEvent.payload),
+            'room_and_owner',
+          ]);
+        }
+        return rows[0].status as string;
       });
     },
     async saveSpecialistResult(

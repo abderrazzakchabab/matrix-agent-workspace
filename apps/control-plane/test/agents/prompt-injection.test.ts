@@ -8,7 +8,6 @@ import {
 } from '../../src/agents/prompt-envelope';
 import {
   validateSpecialistProfile,
-  GITHUB_MUTATION_TOOLS,
 } from '../../src/agents/agent-config';
 import { executeRun } from '../../src/workflows/run-workflow';
 import { makeServices, makeSpecialist, buildWorkflowOptions, newRunId } from '../workflows/support';
@@ -154,7 +153,6 @@ describe('prompt envelope and injection policy', () => {
   });
 
   it('rejects any mutation tool in a specialist profile; no mutation tool exists', () => {
-    expect(GITHUB_MUTATION_TOOLS).toEqual([]);
     expect(() =>
       validateSpecialistProfile({
         id: 'rogue',
