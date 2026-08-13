@@ -10,6 +10,22 @@ A staged project for a Matrix mobile client backed by configurable Vercel-hosted
 
 The implementation plan is at `docs/superpowers/plans/2026-08-12-matrix-agent-workspace.md`.
 
+## Mobile client
+
+The Expo shell supports Matrix login, explicit room-to-workspace binding, and launching parallel or sequential specialist runs. It stores only the opaque control-plane session reference in the platform secure store; the Matrix access token is used only during login.
+
+From the repository root, start the control plane and Expo in separate terminals:
+
+```sh
+# Terminal 1
+pnpm --filter @matrix/control-plane dev
+
+# Terminal 2
+EXPO_PUBLIC_CONTROL_PLANE_URL=http://localhost:3000 pnpm --filter @matrix/mobile start
+```
+
+For a physical device, replace `localhost` with a control-plane URL reachable from that device. Run progress and terminal-state UI are reserved for the next mobile phase.
+
 ## Phase B backend gate
 
 The deterministic backend acceptance stack requires Docker and exposes PostgreSQL/pgvector, Synapse, model-provider, GitHub, and Inngest fixtures. Playwright starts the Next.js control plane for the gate.

@@ -140,7 +140,11 @@ describe('RunComposerScreen', () => {
   it('rotates the idempotency key when the submitted request changes after failure', async () => {
     let attempt = 0;
     const controlPlane = {
-      launchRun: vi.fn(async () => {
+      launchRun: vi.fn(async (
+        _workspaceId: string,
+        _request: unknown,
+        _idempotencyKey: string,
+      ) => {
         attempt += 1;
         throw new Error(`Launch failed ${attempt}`);
       }),
