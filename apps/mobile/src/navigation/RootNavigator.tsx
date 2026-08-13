@@ -20,6 +20,7 @@ const Stack = createNativeStackNavigator<RootStackParams>();
 const specialists: SpecialistOption[] = [
   { id: 'repo-reader', name: 'Repository reader' },
   { id: 'issue-reader', name: 'Issue reader' },
+  { id: 'pr-reader', name: 'Pull Request Reader' },
 ];
 
 interface RootNavigatorProps {

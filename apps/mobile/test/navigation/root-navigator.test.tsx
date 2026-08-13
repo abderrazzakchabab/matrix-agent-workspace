@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 
 const secureStore = vi.hoisted(() => ({
   getItemAsync: vi.fn(async () => 'matrix_session=expired'),
@@ -72,5 +72,77 @@ describe('RootNavigator', () => {
       expect(screen.getByText('Connect your Matrix account')).toBeTruthy();
     });
     expect(secureStore.deleteItemAsync).toHaveBeenCalledWith(SESSION_COOKIE_KEY);
+  });
+
+  it('selects Pull Request Reader and submits it through the composer', async () => {
+    const fetchMock = vi.fn(async (input: string, init?: { method?: string; body?: string }) => {
+      const path = new URL(input).pathname;
+      if (path === '/api/rooms' && (!init?.method || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: async () => ({
+            rooms: [{
+              roomId: '!room:example.test',
+              homeserverUrl: 'https://matrix.example.test',
+              displayName: 'Agent room',
+              workspaceId: null,
+            }],
+          }),
+        };
+      }
+      if (path === '/api/rooms/!room%3Aexample.test/binding' && init?.method === 'POST') {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: async () => ({ roomId: '!room:example.test', workspaceId: 'ws_1' }),
+        };
+      }
+      if (path === '/api/workspaces/ws_1/runs' && init?.method === 'POST') {
+        return {
+          ok: true,
+          status: 202,
+          headers: { get: () => null },
+          json: async () => ({
+            runId: 'run_1',
+            status: 'queued',
+            roomId: '!room:example.test',
+            nextSequence: 1,
+          }),
+        };
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? 'GET'} ${path}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const screen = render(
+      <RootNavigator controlPlaneBaseUrl="https://control.example.test" />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Select room Agent room' }));
+    fireEvent.change(screen.getByLabelText('Workspace ID'), { target: { value: 'ws_1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Bind room' }));
+
+    fireEvent.change(await screen.findByLabelText('Run prompt'), {
+      target: { value: 'Review open pull requests' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Pull Request Reader' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Sequential' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }));
+
+    await waitFor(() => {
+      const launch = fetchMock.mock.calls.find(([input]) =>
+        new URL(input).pathname === '/api/workspaces/ws_1/runs',
+      );
+      expect(launch).toBeDefined();
+      expect(JSON.parse(launch?.[1]?.body ?? '{}')).toEqual({
+        prompt: 'Review open pull requests',
+        mode: 'sequential',
+        specialistIds: ['pr-reader'],
+        roomId: '!room:example.test',
+        idempotencyKey: 'mobile_test-random-uuid',
+      });
+    });
   });
 });
