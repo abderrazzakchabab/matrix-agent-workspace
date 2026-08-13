@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import type { PoolClient } from 'pg';
 import { withTenant } from '../db/client';
 import { getSessionByOpaqueId, SESSION_COOKIE } from './session-service';
@@ -49,7 +49,7 @@ function parseCookies(header: string | null): Record<string, string> {
 }
 
 /** Authenticate the request's opaque session cookie; throws AuthenticationError. */
-export async function requireSession(request: Request): Promise<AuthContext> {
+export async function requireSession(request: NextRequest): Promise<AuthContext> {
   const cookies = parseCookies(request.headers.get('cookie'));
   const opaqueId = cookies[SESSION_COOKIE];
   if (!opaqueId) throw new AuthenticationError();

@@ -1,4 +1,5 @@
 import { withTenant } from '../client';
+import type { PoolClient } from 'pg';
 import { RUN_EVENTS, type RunEventRow } from '../schema/events';
 import type { TenantContext } from './run-repository';
 
@@ -24,6 +25,30 @@ function mapEventRow(row: Record<string, unknown>): RunEventRow {
 }
 
 /**
+ * Append an event using an already-open tenant transaction (no nested BEGIN).
+ * Allocates the next per-run sequence via `append_run_event` (which locks the
+ * run row and checks tenant access). Returns the allocated sequence number.
+ */
+export async function appendEventWithClient(
+  client: PoolClient,
+  runId: string,
+  input: AppendEventInput,
+): Promise<number> {
+  const { rows } = await client.query(
+    'SELECT append_run_event($1, $2, $3, $4, $5, $6) AS sequence',
+    [
+      runId,
+      input.id,
+      input.type,
+      input.version,
+      JSON.stringify(input.payload),
+      input.visibility ?? 'room_and_owner',
+    ],
+  );
+  return Number(rows[0].sequence);
+}
+
+/**
  * Append an event inside a transaction, allocating the next per-run sequence
  * via `append_run_event` (which locks the run row and checks tenant access).
  * Returns the allocated sequence number.
@@ -33,20 +58,9 @@ export async function appendEvent(
   runId: string,
   input: AppendEventInput,
 ): Promise<number> {
-  return withTenant(tenant.userId, async (client) => {
-    const { rows } = await client.query(
-      'SELECT append_run_event($1, $2, $3, $4, $5, $6) AS sequence',
-      [
-        runId,
-        input.id,
-        input.type,
-        input.version,
-        JSON.stringify(input.payload),
-        input.visibility ?? 'room_and_owner',
-      ],
-    );
-    return Number(rows[0].sequence);
-  });
+  return withTenant(tenant.userId, async (client) =>
+    appendEventWithClient(client, runId, input),
+  );
 }
 
 /** List a run's events with sequence greater than `afterSequence` (RLS-scoped). */
