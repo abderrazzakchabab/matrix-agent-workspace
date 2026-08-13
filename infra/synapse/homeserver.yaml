@@ -31,7 +31,7 @@ enable_registration: false
 registration_shared_secret: "test-registration-shared-secret"
 
 # Relax login/registration/message/join rate limits: this is a disposable test
-# fixture, and the four integration test files each create users and a room.
+# fixture, and the integration test files each create users and a room.
 rc_login:
   address:
     per_second: 100
