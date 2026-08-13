@@ -45,6 +45,11 @@ export class ControlPlaneError extends Error {
   }
 }
 
+export interface CancellationResponse {
+  runId: string;
+  status: 'cancellation_requested';
+}
+
 export interface ControlPlaneApi {
   createMatrixSession(homeserverUrl: string, accessToken: string): Promise<MatrixSessionResponse>;
   getRooms(): Promise<RoomSummary[]>;
@@ -54,6 +59,7 @@ export interface ControlPlaneApi {
     request: RunRequestType,
     idempotencyKey: string,
   ): Promise<RunResponseType>;
+  cancelRun(runId: string): Promise<CancellationResponse>;
 }
 
 interface ApiErrorBody {
@@ -85,6 +91,17 @@ async function readResponse<T>(response: FetchResponse): Promise<T> {
   return body;
 }
 
+export async function expireControlPlaneSession(
+  sessionStore: SessionStore,
+  onUnauthorized?: () => void,
+): Promise<void> {
+  try {
+    await sessionStore.clear();
+  } finally {
+    onUnauthorized?.();
+  }
+}
+
 export function createControlPlaneClient(options: {
   baseUrl: string;
   sessionStore: SessionStore;
@@ -95,11 +112,7 @@ export function createControlPlaneClient(options: {
   const fetchImpl = options.fetch ?? (globalThis.fetch as unknown as FetchImplementation);
 
   async function invalidateSession(): Promise<void> {
-    try {
-      await options.sessionStore.clear();
-    } finally {
-      options.onUnauthorized?.();
-    }
+    await expireControlPlaneSession(options.sessionStore, options.onUnauthorized);
   }
 
   async function authenticatedRequest<T>(path: string, init?: {
@@ -164,6 +177,13 @@ export function createControlPlaneClient(options: {
           method: 'POST',
           body: { ...versionedRequest, idempotencyKey },
         },
+      );
+    },
+
+    async cancelRun(runId) {
+      return authenticatedRequest<CancellationResponse>(
+        `/api/runs/${encodeURIComponent(runId)}/cancel`,
+        { method: 'POST' },
       );
     },
   };
