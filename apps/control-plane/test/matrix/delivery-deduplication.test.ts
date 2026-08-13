@@ -115,20 +115,17 @@ describe('Matrix delivery deduplication', () => {
     expect(client.attemptedKeys).toEqual([deliveryKey]);
   });
 
-  it('retries a transient Matrix 503 without duplicating the logical send', async () => {
+  it('throws on a transient Matrix 503 so Inngest retries the drain without duplicating the logical send', async () => {
     const { deliveryKey } = await makeRunWithProgressEvent();
     const client = new FixtureMatrixClient();
     client.failNext(deliveryKey, 503);
 
-    const first = await deliverPending(
-      { userId: ownerId, workspaceId },
-      { matrix: client, backoff: () => 60_000 },
-    );
-    expect(first.retried).toBe(1);
+    await expect(
+      deliverPending({ userId: ownerId, workspaceId }, { matrix: client }),
+    ).rejects.toMatchObject({ status: 503 });
     expect(client.sentKeys).toEqual([]);
 
-    // The message becomes retryable on the next worker pass.
-    await getAdminPool().query('UPDATE outbox_messages SET next_attempt_at = now()');
+    // Inngest re-invokes the drain on retry; the still-pending message sends once.
     const second = await deliverPending({ userId: ownerId, workspaceId }, { matrix: client });
     expect(second.delivered).toBe(1);
 

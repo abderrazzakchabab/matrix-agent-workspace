@@ -56,6 +56,7 @@ export async function* streamRunEvents(
   let cursor = after;
   let lastHeartbeatAt = 0;
   for (;;) {
+    const run = await getRun(tenant, runId);
     const page = await listEventsPage(tenant, runId, cursor, opts.replayLimit);
     for (const row of page.events) {
       yield encodeEventFrame(toRunEvent(row));
@@ -64,7 +65,6 @@ export async function* streamRunEvents(
 
     if (page.hasMore) continue; // bounded batch continuation
 
-    const run = await getRun(tenant, runId);
     const terminal = run === null || TERMINAL_STATUSES.has(run.status);
     if (terminal) return; // terminal close
 

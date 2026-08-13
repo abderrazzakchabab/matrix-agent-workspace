@@ -56,6 +56,7 @@ function summarizePayload(payload: Record<string, unknown>): string {
 }
 
 function summarizeTerminal(payload: Record<string, unknown>): string {
+  const code = typeof payload.code === 'string' ? payload.code : undefined;
   const safe = redact(payload) as Record<string, unknown>;
   const parts: string[] = [];
   if (Array.isArray(safe.completedSpecialists) && safe.completedSpecialists.length > 0) {
@@ -64,8 +65,8 @@ function summarizeTerminal(payload: Record<string, unknown>): string {
   if (Array.isArray(safe.failedSpecialists) && safe.failedSpecialists.length > 0) {
     parts.push(`${safe.failedSpecialists.length} failed`);
   }
-  if (typeof safe.code === 'string' && safe.code.length > 0) {
-    parts.push(`code=${safe.code}`);
+  if (code && code.length > 0) {
+    parts.push(`code=${code}`);
   }
   return parts.join(', ');
 }

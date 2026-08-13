@@ -92,6 +92,28 @@ describe('terminal message delivery', () => {
     expect(text).toContain(runId);
   });
 
+  it('surfaces the failed run error code rather than redacting it', async () => {
+    const runId = `run_${randomUUID()}`;
+    await createRun(
+      { userId: ownerId, workspaceId },
+      { id: runId, roomId: ROOM_ID, promptHash: 'hash', mode: 'parallel' },
+    );
+    await getAdminPool().query('UPDATE runs SET status = $1 WHERE id = $2', ['failed', runId]);
+    await publishEvent({ userId: ownerId, workspaceId }, runId, {
+      id: `evt_${randomUUID()}`,
+      type: 'run.failed',
+      version: 1,
+      payload: { code: 'EXECUTION_KEY_MISMATCH' },
+    });
+
+    const client = new FixtureMatrixClient();
+    const report = await deliverPending({ userId: ownerId, workspaceId }, { matrix: client });
+    expect(report.delivered).toBe(1);
+    expect(client.sends).toHaveLength(1);
+    expect(client.sends[0].body).toContain('code=EXECUTION_KEY_MISMATCH');
+    expect(client.sends[0].body).not.toContain('code=[REDACTED]');
+  });
+
   it('sends a partial terminal message to the bound room', async () => {
     const { text, runId } = await deliverTerminal('partial', 'run.partial');
     expect(text).toContain('partial');

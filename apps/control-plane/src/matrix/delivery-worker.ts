@@ -8,8 +8,9 @@
  *
  * Delivery semantics:
  * - a message is delivered at most once per `(run_id, sequence, room_id)` key;
- * - transient Matrix 5xx/429 failures schedule a bounded backoff retry without
- *   duplicating the logical send (the delivery key is the Matrix txn id);
+ * - transient Matrix 5xx/429 failures are surfaced as errors so the Inngest
+ *   function's retries re-invoke the drain; the delivery key is the Matrix
+ *   txn id, so a retry never duplicates the logical send;
  * - non-retryable failures and poison messages are marked terminal and never
  *   resend; the run's status is never touched, so a failed delivery never
  *   reruns agent work.
@@ -29,24 +30,17 @@ import {
 
 export interface DeliveryOptions {
   matrix?: MatrixDeliveryClient;
-  backoff?: (attempt: number) => number;
-  maxAttempts?: number;
   batchSize?: number;
-  now?: () => number;
 }
 
 export interface DeliveryReport {
   delivered: number;
-  retried: number;
   failed: number;
   skipped: number;
 }
 
-const DEFAULT_BACKOFF = (attempt: number): number =>
-  Math.min(1000 * 2 ** Math.max(0, attempt - 1), 30_000);
-
 function emptyReport(): DeliveryReport {
-  return { delivered: 0, retried: 0, failed: 0, skipped: 0 };
+  return { delivered: 0, failed: 0, skipped: 0 };
 }
 
 interface OutboxMessageRow {
@@ -89,18 +83,11 @@ async function markTerminal(
   );
 }
 
-interface DeliverOneOptions {
-  matrix: MatrixDeliveryClient;
-  backoff: (attempt: number) => number;
-  maxAttempts: number;
-  now: () => number;
-}
-
 /** Deliver a single outbox message in its own transaction. */
 async function deliverOne(
   tenant: TenantContext,
   messageId: string,
-  opts: DeliverOneOptions,
+  matrix: MatrixDeliveryClient,
 ): Promise<keyof DeliveryReport> {
   return withTenant(tenant.userId, async (client) => {
     const claimed = await client.query(
@@ -169,7 +156,7 @@ async function deliverOne(
     });
 
     try {
-      const result = await opts.matrix.sendMessage({
+      const result = await matrix.sendMessage({
         accessToken: token.accessToken,
         homeserverUrl: binding.homeserver_url as string,
         roomId,
@@ -188,23 +175,10 @@ async function deliverOne(
       );
       return 'delivered';
     } catch (error) {
-      const attempts = msg.attempts + 1;
       if (isRetryableMatrixError(error)) {
-        if (attempts >= opts.maxAttempts) {
-          await markTerminal(client, msg.id, 'dead', attempts);
-          return 'failed';
-        }
-        await client.query(
-          `UPDATE ${OUTBOX_MESSAGES.table}
-              SET ${OUTBOX_MESSAGES.attempts} = $1,
-                  ${OUTBOX_MESSAGES.nextAttemptAt} = to_timestamp($2 / 1000.0),
-                  ${OUTBOX_MESSAGES.updatedAt} = now()
-            WHERE ${OUTBOX_MESSAGES.id} = $3`,
-          [attempts, opts.now() + opts.backoff(attempts), msg.id],
-        );
-        return 'retried';
+        throw error;
       }
-      await markTerminal(client, msg.id, 'failed', attempts);
+      await markTerminal(client, msg.id, 'failed', msg.attempts + 1);
       return 'failed';
     }
   });
@@ -219,10 +193,7 @@ export async function deliverPending(
   options: DeliveryOptions = {},
 ): Promise<DeliveryReport> {
   const matrix = options.matrix ?? getMatrixDeliveryClient();
-  const backoff = options.backoff ?? DEFAULT_BACKOFF;
-  const maxAttempts = options.maxAttempts ?? 5;
   const batchSize = options.batchSize ?? 100;
-  const now = options.now ?? (() => Date.now());
 
   const candidates = await withTenant(tenant.userId, async (client) => {
     const { rows } = await client.query(
@@ -242,10 +213,19 @@ export async function deliverPending(
   });
 
   const report = emptyReport();
-  const deliverOptions: DeliverOneOptions = { matrix, backoff, maxAttempts, now };
+  let retryableError: unknown = null;
   for (const id of candidates) {
-    const outcome = await deliverOne(tenant, id, deliverOptions);
-    report[outcome] += 1;
+    try {
+      const outcome = await deliverOne(tenant, id, matrix);
+      report[outcome] += 1;
+    } catch (error) {
+      if (isRetryableMatrixError(error)) {
+        retryableError = error;
+      } else {
+        throw error;
+      }
+    }
   }
+  if (retryableError) throw retryableError;
   return report;
 }
