@@ -378,7 +378,8 @@ describe('Matrix delivery deduplication', () => {
 
   it('times out Matrix transport and defers the delivery for retry', async () => {
     const { deliveryKey } = await makeRunWithProgressEvent();
-    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+    const fetchMock = vi.fn(
+      (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
       new Promise<Response>((_resolve, reject) => {
         const signal = init?.signal;
         if (!signal) {

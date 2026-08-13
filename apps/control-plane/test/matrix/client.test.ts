@@ -7,7 +7,7 @@ afterEach(() => {
 
 describe('SynapseDeliveryClient', () => {
   it('treats malformed successful responses as retryable with a stable transaction id', async () => {
-    const fetchMock = vi.fn(() =>
+    const fetchMock = vi.fn((_input: Parameters<typeof fetch>[0]) =>
       Promise.resolve(
         new Response('{"event_id":', {
           status: 200,

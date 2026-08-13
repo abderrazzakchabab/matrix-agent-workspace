@@ -14,8 +14,8 @@
  * Safety properties:
  * - parallel mode: every specialist receives the same immutable initial input
  *   and results are joined per specialist;
- * - sequential mode: each specialist receives typed `prior_results` in
- *   declared order plus the explicit failure policy;
+ * - sequential mode: each specialist receives only its immediate predecessor's
+ *   typed result plus the explicit failure policy;
  * - retries: only typed transient provider failures, bounded with capped
  *   exponential backoff; attempts and the next retry are persisted before
  *   sleeping;
@@ -717,11 +717,20 @@ export async function executeRun(opts: WorkflowOptions): Promise<WorkflowOutcome
         outcomes.push(item.value);
       }
     } else {
-      const priorResults: PriorSpecialistResult[] = outcomes.map((o) =>
-        o.status === 'completed'
-          ? { specialistId: o.specialistId, status: 'completed', output: o.output }
-          : { specialistId: o.specialistId, status: 'failed', errorCode: o.errorCode },
-      );
+      const checkpointedPrior = outcomes.at(-1);
+      let priorResult: PriorSpecialistResult | undefined = checkpointedPrior
+        ? checkpointedPrior.status === 'completed'
+          ? {
+              specialistId: checkpointedPrior.specialistId,
+              status: 'completed',
+              output: checkpointedPrior.output,
+            }
+          : {
+              specialistId: checkpointedPrior.specialistId,
+              status: 'failed',
+              errorCode: checkpointedPrior.errorCode,
+            }
+        : undefined;
       for (const spec of pending) {
         if (await services.cancellation.isCancelled(runId)) {
           return finalizeTerminal(opts, 'cancelled', outcomes, startedAt, 'run.cancelled', {
@@ -733,23 +742,22 @@ export async function executeRun(opts: WorkflowOptions): Promise<WorkflowOutcome
         const input: SpecialistRuntimeInput = {
           prompt: opts.prompt,
           githubContext: opts.githubContext ? { ...opts.githubContext } : undefined,
-          priorResults: priorResults.map((p) => ({ ...p })),
+          priorResults: priorResult ? [{ ...priorResult }] : [],
         };
         const outcome = await runSpecialist(spec, input);
         outcomes.push(outcome);
-        if (outcome.status === 'completed') {
-          priorResults.push({
-            specialistId: outcome.specialistId,
-            status: 'completed',
-            output: outcome.output,
-          });
-        } else {
-          priorResults.push({
-            specialistId: outcome.specialistId,
-            status: 'failed',
-            errorCode: outcome.errorCode,
-          });
-        }
+        priorResult =
+          outcome.status === 'completed'
+            ? {
+                specialistId: outcome.specialistId,
+                status: 'completed',
+                output: outcome.output,
+              }
+            : {
+                specialistId: outcome.specialistId,
+                status: 'failed',
+                errorCode: outcome.errorCode,
+              };
         if (outcome.status === 'failed' && opts.failurePolicy === 'fail_run') {
           return finalizeTerminal(opts, 'failed', outcomes, startedAt, 'run.failed', {
             code: 'SPECIALIST_FAILED',

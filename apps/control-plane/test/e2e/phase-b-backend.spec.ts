@@ -410,6 +410,7 @@ test('Phase B backend contract is durable, replayable, Matrix-first, and GitHub 
   expect(sequentialResult.specialists.map((item) => item.ordinal)).toEqual([0, 1, 2]);
   expect(parallelResult.specialists[1]?.output?.summary).toContain('prior=none');
   expect(sequentialResult.specialists[1]?.output?.summary).toContain('prior=repo-reader');
+  expect(sequentialResult.specialists[2]?.output?.summary).toContain('prior=issue-reader');
 
   const timings = await modelState();
   const parallelCalls = callsFor(timings, 'phase-b-parallel');
