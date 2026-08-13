@@ -1,4 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Pool, type PoolClient } from 'pg';
 
 /**
@@ -97,14 +99,18 @@ export function splitSqlStatements(sql: string): string[] {
 
 /** Apply every SQL migration in order (idempotent) using the owner role. */
 export async function runMigrations(): Promise<void> {
-  const migrationsDir = new URL('./migrations/', import.meta.url);
+  // Resolve through node:path rather than a directory URL so Next's server
+  // bundler does not try to import the SQL directory when route modules import
+  // this client. Migration discovery still happens only when this function is
+  // explicitly invoked by fixtures or deployment tooling.
+  const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
   const files = (await readdir(migrationsDir))
     .filter((f) => f.endsWith('.sql'))
     .sort();
   const client = await getAdminPool().connect();
   try {
     for (const file of files) {
-      const sql = await readFile(new URL(`./migrations/${file}`, import.meta.url), 'utf8');
+      const sql = await readFile(join(migrationsDir, file), 'utf8');
       for (const statement of splitSqlStatements(sql)) {
         await client.query(statement);
       }

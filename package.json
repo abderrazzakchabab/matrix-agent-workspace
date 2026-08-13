@@ -6,6 +6,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:foundation": "vitest run apps/control-plane/test/health.route.test.ts packages/contracts/test/contracts.test.ts",
+    "test:fixtures:model": "node --experimental-strip-types tests/fixtures/model/server.ts",
+    "test:fixtures:github": "node --experimental-strip-types tests/fixtures/github/server.ts",
+    "test:fixtures:up": "docker-compose -f infra/docker-compose.test.yml up -d postgres synapse model github inngest && timeout 120 sh -c 'until docker-compose -f infra/docker-compose.test.yml exec -T postgres pg_isready -U matrix -d matrix_test >/dev/null 2>&1 && curl -fsS http://127.0.0.1:8008/_matrix/client/versions >/dev/null && curl -fsS http://127.0.0.1:4010/health >/dev/null && curl -fsS http://127.0.0.1:4020/health >/dev/null && curl -fsS http://127.0.0.1:8288/dev >/dev/null; do sleep 2; done' && docker-compose -f infra/docker-compose.test.yml exec -T synapse /tests/fixtures/synapse/seed.sh",
+    "test:fixtures:health": "docker-compose -f infra/docker-compose.test.yml exec -T postgres psql -U matrix -d matrix_test -tAc \"SELECT extname FROM pg_extension WHERE extname = 'vector'\" | grep -qx vector && curl -fsS http://127.0.0.1:8008/_matrix/client/versions >/dev/null && curl -fsS http://127.0.0.1:4010/health >/dev/null && curl -fsS http://127.0.0.1:4020/health >/dev/null && curl -fsS http://127.0.0.1:8288/dev >/dev/null && test -z \"$(docker-compose -f infra/docker-compose.test.yml ps -q | xargs -r docker inspect -f '{{if .State.ExitCode}}{{.Name}}{{end}}')\"",
+    "test:fixtures:down": "docker-compose -f infra/docker-compose.test.yml down --remove-orphans",
+    "test:phase-b": "pnpm test:fixtures:up && playwright test apps/control-plane/test/e2e/phase-b-backend.spec.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit"
   },

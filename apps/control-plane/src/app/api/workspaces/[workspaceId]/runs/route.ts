@@ -19,7 +19,7 @@ import {
   ValidationError,
 } from '../../../../../auth/authorization';
 import { createRun } from '../../../../../db/repositories/run-repository';
-import { appendEvent } from '../../../../../db/repositories/event-repository';
+import { publishEvent } from '../../../../../events/event-service';
 import {
   validateSpecialistProfiles,
   resolveExecutionOrder,
@@ -212,7 +212,7 @@ export async function POST(
         );
       }
     });
-    await appendEvent(
+    await publishEvent(
       { userId: auth.userId, workspaceId },
       runId,
       {
