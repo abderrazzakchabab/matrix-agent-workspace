@@ -14,6 +14,8 @@ import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession, toErrorResponse, withTenant } from '../../../../../auth/authorization';
 import { appendEventWithClient } from '../../../../../db/repositories/event-repository';
+import { enqueueMatrixDeliveryWithClient } from '../../../../../events/event-service';
+import { dispatchMatrixDeliveryRequested } from '../../../../../inngest/functions/deliver-matrix-event';
 
 class RunNotFoundError extends Error {
   readonly code = 'RUN_NOT_FOUND';
@@ -46,7 +48,7 @@ export async function POST(
 
     const result = await withTenant(auth.userId, async (client) => {
       const { rows } = await client.query(
-        'SELECT status, cancel_requested_at FROM runs WHERE id = $1 FOR UPDATE',
+        'SELECT status, cancel_requested_at, workspace_id, owner_id FROM runs WHERE id = $1 FOR UPDATE',
         [runId],
       );
       const run = rows[0] ?? null;
@@ -68,30 +70,45 @@ export async function POST(
         [runId],
       );
       const newStatus = (updated.rows[0]?.status as string | undefined) ?? (run.status as string);
+      let outboxEnqueued = false;
       if (newlyRecorded) {
-        if (newStatus === 'cancelled') {
-          // Exactly one terminal cancellation event for a run cancelled before
-          // the workflow started; the workflow never emits a second one.
-          await appendEventWithClient(client, runId, {
-            id: `evt_${randomUUID()}`,
-            type: 'run.cancelled',
-            version: 1,
-            payload: { cancelledAt: new Date().toISOString() },
-          });
-        } else {
-          await appendEventWithClient(client, runId, {
-            id: `evt_${randomUUID()}`,
-            type: 'run.cancellation_requested',
-            version: 1,
-            payload: {},
-          });
-        }
+        // Exactly one terminal cancellation event for a run cancelled before
+        // the workflow started; a running workflow receives the intent event
+        // and later emits the single terminal cancellation itself.
+        const sequence = await appendEventWithClient(client, runId, {
+          id: `evt_${randomUUID()}`,
+          type: newStatus === 'cancelled' ? 'run.cancelled' : 'run.cancellation_requested',
+          version: 1,
+          payload:
+            newStatus === 'cancelled'
+              ? { cancelledAt: new Date().toISOString() }
+              : {},
+        });
+        outboxEnqueued = await enqueueMatrixDeliveryWithClient(
+          client,
+          run.workspace_id as string,
+          runId,
+          sequence,
+        );
       }
-      return { kind: 'updated' as const, status: newStatus };
+      return {
+        kind: 'updated' as const,
+        status: newStatus,
+        workspaceId: run.workspace_id as string,
+        ownerId: run.owner_id as string,
+        outboxEnqueued,
+      };
     });
 
     if (result.kind === 'not_found') throw new RunNotFoundError();
     if (result.kind === 'terminal') throw new RunAlreadyTerminalError(result.status);
+    if (result.outboxEnqueued) {
+      await dispatchMatrixDeliveryRequested({
+        workspaceId: result.workspaceId,
+        userId: result.ownerId,
+        runId,
+      });
+    }
 
     return NextResponse.json(
       { requestId, runId, status: 'cancellation_requested' },

@@ -46,7 +46,34 @@ export const runRequested = inngest.createFunction(
         );
       }
       const runStore = createPostgresWorkflowRunStore(tenant);
-      const events = createPostgresWorkflowEventSink(tenant, data.runId);
+      const checkpoints = createPostgresCheckpointStore(tenant);
+      const durableEvents = createPostgresWorkflowEventSink(tenant, data.runId);
+      const interruptFixture =
+        process.env.PHASE_B_FIXTURE_MODE === '1' &&
+        data.prompt.includes('[fixture:interrupt-once]');
+      const events = interruptFixture
+        ? {
+            list: () => durableEvents.list(),
+            async append(type: string, payload: Record<string, unknown>): Promise<number> {
+              const sequence = await durableEvents.append(type, payload);
+              if (
+                type === 'specialist.completed' &&
+                payload.specialistId === 'repo-reader'
+              ) {
+                const marker = await checkpoints.save(
+                  data.runId,
+                  'fixture:interruption',
+                  { afterSpecialist: 'repo-reader', sequence },
+                  0,
+                );
+                if (marker !== null) {
+                  throw new Error('simulated Phase B workflow interruption');
+                }
+              }
+              return sequence;
+            },
+          }
+        : durableEvents;
 
       // The dispatched execution key must match the persisted prompt hash and
       // config snapshot; a mismatch fails the run without executing anything.
@@ -64,7 +91,7 @@ export const runRequested = inngest.createFunction(
       const snapshot = run.configSnapshot;
       const services: WorkflowServices = {
         provider: getSpecialistProvider(),
-        checkpoints: createPostgresCheckpointStore(tenant),
+        checkpoints,
         runStore,
         events,
         cancellation: createPostgresCancellationController(tenant),

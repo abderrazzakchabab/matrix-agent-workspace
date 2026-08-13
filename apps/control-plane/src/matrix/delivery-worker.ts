@@ -16,7 +16,7 @@
  *   reruns agent work.
  */
 import type { PoolClient } from 'pg';
-import { withTenant } from '../db/client';
+import { getPool, withTenant } from '../db/client';
 import type { TenantContext } from '../db/repositories/run-repository';
 import { OUTBOX_MESSAGES } from '../db/schema/outbox';
 import { renderMessage } from './message-renderer';
@@ -39,6 +39,10 @@ export interface DeliveryReport {
   skipped: number;
 }
 
+export interface DeliverySweepOptions extends DeliveryOptions {
+  tenantBatchSize?: number;
+}
+
 function emptyReport(): DeliveryReport {
   return { delivered: 0, failed: 0, skipped: 0 };
 }
@@ -51,6 +55,14 @@ interface OutboxMessageRow {
   deliveryKey: string;
   status: string;
   attempts: number;
+}
+
+type DeliveryAttemptResult =
+  | { outcome: keyof DeliveryReport }
+  | { retryableError: unknown };
+
+function retryDelaySeconds(attempts: number): number {
+  return Math.min(300, 5 * 2 ** Math.min(attempts, 6));
 }
 
 function mapOutboxRow(row: Record<string, unknown>): OutboxMessageRow {
@@ -88,15 +100,28 @@ async function deliverOne(
   tenant: TenantContext,
   messageId: string,
   matrix: MatrixDeliveryClient,
-): Promise<keyof DeliveryReport> {
+): Promise<DeliveryAttemptResult> {
   return withTenant(tenant.userId, async (client) => {
     const claimed = await client.query(
-      `SELECT * FROM ${OUTBOX_MESSAGES.table} WHERE ${OUTBOX_MESSAGES.id} = $1 FOR UPDATE`,
+      `SELECT candidate.* FROM ${OUTBOX_MESSAGES.table} candidate
+        WHERE candidate.${OUTBOX_MESSAGES.id} = $1
+          AND candidate.${OUTBOX_MESSAGES.status} = 'pending'
+          AND (candidate.${OUTBOX_MESSAGES.nextAttemptAt} IS NULL
+               OR candidate.${OUTBOX_MESSAGES.nextAttemptAt} <= now())
+          AND NOT EXISTS (
+            SELECT 1
+              FROM ${OUTBOX_MESSAGES.table} earlier
+             WHERE earlier.${OUTBOX_MESSAGES.aggregateKey} = candidate.${OUTBOX_MESSAGES.aggregateKey}
+               AND earlier.${OUTBOX_MESSAGES.destination} = candidate.${OUTBOX_MESSAGES.destination}
+               AND earlier.${OUTBOX_MESSAGES.status} = 'pending'
+               AND earlier.${OUTBOX_MESSAGES.eventSequence} < candidate.${OUTBOX_MESSAGES.eventSequence}
+          )
+        FOR UPDATE OF candidate`,
       [messageId],
     );
-    if (claimed.rows.length === 0) return 'skipped';
+    if (claimed.rows.length === 0) return { outcome: 'skipped' };
     const msg = mapOutboxRow(claimed.rows[0]);
-    if (msg.status !== 'pending') return 'skipped';
+    if (msg.status !== 'pending') return { outcome: 'skipped' };
 
     const runId = msg.aggregateKey;
     const roomId = msg.destination;
@@ -109,9 +134,9 @@ async function deliverOne(
     const run = runRes.rows[0];
     if (!run) {
       await markTerminal(client, msg.id, 'dead', msg.attempts);
-      return 'failed';
+      return { outcome: 'failed' };
     }
-    if ((run.owner_id as string) !== tenant.userId) return 'skipped';
+    if ((run.owner_id as string) !== tenant.userId) return { outcome: 'skipped' };
 
     // Load the persisted explicit binding: the room must be bound to this
     // workspace by the run owner. The outbox destination is not trusted alone.
@@ -122,7 +147,7 @@ async function deliverOne(
     const binding = bindingRes.rows[0];
     if (!binding) {
       await markTerminal(client, msg.id, 'dead', msg.attempts);
-      return 'failed';
+      return { outcome: 'failed' };
     }
 
     // Load the event payload to render.
@@ -133,7 +158,7 @@ async function deliverOne(
     const eventRow = eventRes.rows[0];
     if (!eventRow) {
       await markTerminal(client, msg.id, 'dead', msg.attempts);
-      return 'failed';
+      return { outcome: 'failed' };
     }
 
     // Decrypt the owner's session token.
@@ -143,7 +168,7 @@ async function deliverOne(
     } catch (error) {
       if (isMatrixTokenUnavailable(error)) {
         await markTerminal(client, msg.id, 'failed', msg.attempts);
-        return 'failed';
+        return { outcome: 'failed' };
       }
       throw error;
     }
@@ -173,13 +198,21 @@ async function deliverOne(
           WHERE ${OUTBOX_MESSAGES.id} = $2`,
         [result.eventId, msg.id],
       );
-      return 'delivered';
+      return { outcome: 'delivered' };
     } catch (error) {
       if (isRetryableMatrixError(error)) {
-        throw error;
+        await client.query(
+          `UPDATE ${OUTBOX_MESSAGES.table}
+              SET ${OUTBOX_MESSAGES.attempts} = $1,
+                  ${OUTBOX_MESSAGES.nextAttemptAt} = now() + ($2 * interval '1 second'),
+                  ${OUTBOX_MESSAGES.updatedAt} = now()
+            WHERE ${OUTBOX_MESSAGES.id} = $3`,
+          [msg.attempts + 1, retryDelaySeconds(msg.attempts), msg.id],
+        );
+        return { retryableError: error };
       }
       await markTerminal(client, msg.id, 'failed', msg.attempts + 1);
-      return 'failed';
+      return { outcome: 'failed' };
     }
   });
 }
@@ -205,6 +238,15 @@ export async function deliverPending(
           AND o.${OUTBOX_MESSAGES.status} = 'pending'
           AND (o.${OUTBOX_MESSAGES.nextAttemptAt} IS NULL
                OR o.${OUTBOX_MESSAGES.nextAttemptAt} <= now())
+          AND NOT EXISTS (
+            SELECT 1
+              FROM ${OUTBOX_MESSAGES.table} earlier
+             WHERE earlier.${OUTBOX_MESSAGES.aggregateKey} = o.${OUTBOX_MESSAGES.aggregateKey}
+               AND earlier.${OUTBOX_MESSAGES.destination} = o.${OUTBOX_MESSAGES.destination}
+               AND earlier.${OUTBOX_MESSAGES.status} = 'pending'
+               AND earlier.${OUTBOX_MESSAGES.eventSequence} < o.${OUTBOX_MESSAGES.eventSequence}
+               AND earlier.${OUTBOX_MESSAGES.nextAttemptAt} > now()
+          )
         ORDER BY o.${OUTBOX_MESSAGES.eventSequence} ASC, o.${OUTBOX_MESSAGES.createdAt} ASC
         LIMIT $3`,
       [tenant.workspaceId, tenant.userId, batchSize],
@@ -213,19 +255,38 @@ export async function deliverPending(
   });
 
   const report = emptyReport();
-  let retryableError: unknown = null;
   for (const id of candidates) {
+    const result = await deliverOne(tenant, id, matrix);
+    if ('retryableError' in result) throw result.retryableError;
+    report[result.outcome] += 1;
+  }
+  return report;
+}
+
+export async function sweepPendingMatrixDeliveries(
+  options: DeliverySweepOptions = {},
+): Promise<DeliveryReport> {
+  const tenantBatchSize = options.tenantBatchSize ?? 100;
+  const { rows } = await getPool().query(
+    'SELECT user_id, workspace_id FROM pending_matrix_delivery_tenants($1)',
+    [tenantBatchSize],
+  );
+  const report = emptyReport();
+  for (const row of rows) {
     try {
-      const outcome = await deliverOne(tenant, id, matrix);
-      report[outcome] += 1;
+      const tenantReport = await deliverPending(
+        {
+          userId: row.user_id as string,
+          workspaceId: row.workspace_id as string,
+        },
+        { matrix: options.matrix, batchSize: options.batchSize },
+      );
+      report.delivered += tenantReport.delivered;
+      report.failed += tenantReport.failed;
+      report.skipped += tenantReport.skipped;
     } catch (error) {
-      if (isRetryableMatrixError(error)) {
-        retryableError = error;
-      } else {
-        throw error;
-      }
+      if (!isRetryableMatrixError(error)) throw error;
     }
   }
-  if (retryableError) throw retryableError;
   return report;
 }

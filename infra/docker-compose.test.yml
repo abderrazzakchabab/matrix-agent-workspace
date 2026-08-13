@@ -42,3 +42,56 @@ services:
       timeout: 5s
       retries: 30
       start_period: 5s
+
+  model:
+    image: node:22-alpine
+    container_name: matrix-test-model
+    working_dir: /app
+    command: ['node', '--experimental-strip-types', 'tests/fixtures/model/server.ts']
+    environment:
+      MODEL_FIXTURE_PORT: '4010'
+    ports:
+      - '4010:4010'
+    volumes:
+      - ..:/app:ro
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:4010/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 2s
+
+  github:
+    image: node:22-alpine
+    container_name: matrix-test-github
+    working_dir: /app
+    command: ['node', '--experimental-strip-types', 'tests/fixtures/github/server.ts']
+    environment:
+      GITHUB_FIXTURE_PORT: '4020'
+    ports:
+      - '4020:4020'
+    volumes:
+      - ..:/app:ro
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:4020/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 2s
+
+  inngest:
+    image: inngest/inngest@sha256:0ad9d99466d3a6e0141bc2eea5834eb3f334500b5097d757c82d228d37efa884
+    container_name: matrix-test-inngest
+    command:
+      - inngest
+      - dev
+      - --sdk-url
+      - http://host.docker.internal:3000/api/inngest
+      - --poll-interval
+      - '1'
+      - --retry-interval
+      - '1'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '8288:8288'

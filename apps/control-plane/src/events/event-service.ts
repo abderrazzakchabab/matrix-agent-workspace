@@ -11,6 +11,7 @@
  * by the Matrix delivery worker.
  */
 import { randomUUID } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import { withTenant } from '../db/client';
 import type { TenantContext } from '../db/repositories/run-repository';
 import type { RunEventRow } from '../db/schema/events';
@@ -80,6 +81,44 @@ function mapEventRow(row: Record<string, unknown>): RunEventRow {
 }
 
 /**
+ * Enqueue the Matrix delivery for an already-persisted event while the caller's
+ * transaction is still open. Terminal workflow transitions use this helper so
+ * status, terminal event, and delivery remain one atomic commit.
+ */
+export async function enqueueMatrixDeliveryWithClient(
+  client: PoolClient,
+  workspaceId: string,
+  runId: string,
+  sequence: number,
+): Promise<boolean> {
+  const roomRes = await client.query(
+    'SELECT room_id FROM runs WHERE id = $1 AND workspace_id = $2',
+    [runId, workspaceId],
+  );
+  const roomId = (roomRes.rows[0]?.room_id as string | null) ?? null;
+  if (!roomId) return false;
+  const inserted = await client.query(
+    `INSERT INTO ${OUTBOX_MESSAGES.table}
+       (${OUTBOX_MESSAGES.id}, ${OUTBOX_MESSAGES.workspaceId},
+        ${OUTBOX_MESSAGES.aggregateKey}, ${OUTBOX_MESSAGES.destination},
+        ${OUTBOX_MESSAGES.eventSequence}, ${OUTBOX_MESSAGES.deliveryKey},
+        ${OUTBOX_MESSAGES.status}, ${OUTBOX_MESSAGES.attempts})
+     VALUES ($1, $2, $3, $4, $5, $6, 'pending', 0)
+     ON CONFLICT (${OUTBOX_MESSAGES.deliveryKey}) DO NOTHING
+     RETURNING ${OUTBOX_MESSAGES.id}`,
+    [
+      `om_${randomUUID()}`,
+      workspaceId,
+      runId,
+      roomId,
+      sequence,
+      `${runId}:${sequence}:${roomId}`,
+    ],
+  );
+  return inserted.rows.length > 0;
+}
+
+/**
  * Persist an event and enqueue its Matrix delivery atomically. Returns the
  * allocated sequence and whether an outbox message was enqueued (only when the
  * run has a bound room).
@@ -90,12 +129,6 @@ export async function publishEvent(
   input: PublishEventInput,
 ): Promise<PublishEventResult> {
   const result = await withTenant(tenant.userId, async (client) => {
-    const roomRes = await client.query(
-      'SELECT room_id FROM runs WHERE id = $1 AND workspace_id = $2',
-      [runId, tenant.workspaceId],
-    );
-    const roomId = (roomRes.rows[0]?.room_id as string | null) ?? null;
-
     const seqRes = await client.query(
       'SELECT append_run_event($1, $2, $3, $4, $5, $6) AS sequence',
       [
@@ -108,28 +141,12 @@ export async function publishEvent(
       ],
     );
     const sequence = Number(seqRes.rows[0].sequence);
-
-    let outboxEnqueued = false;
-    if (roomId) {
-      await client.query(
-        `INSERT INTO ${OUTBOX_MESSAGES.table}
-           (${OUTBOX_MESSAGES.id}, ${OUTBOX_MESSAGES.workspaceId},
-            ${OUTBOX_MESSAGES.aggregateKey}, ${OUTBOX_MESSAGES.destination},
-            ${OUTBOX_MESSAGES.eventSequence}, ${OUTBOX_MESSAGES.deliveryKey},
-            ${OUTBOX_MESSAGES.status}, ${OUTBOX_MESSAGES.attempts})
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', 0)
-         ON CONFLICT (${OUTBOX_MESSAGES.deliveryKey}) DO NOTHING`,
-        [
-          `om_${randomUUID()}`,
-          tenant.workspaceId,
-          runId,
-          roomId,
-          sequence,
-          `${runId}:${sequence}:${roomId}`,
-        ],
-      );
-      outboxEnqueued = true;
-    }
+    const outboxEnqueued = await enqueueMatrixDeliveryWithClient(
+      client,
+      tenant.workspaceId,
+      runId,
+      sequence,
+    );
     return { sequence, outboxEnqueued };
   });
 

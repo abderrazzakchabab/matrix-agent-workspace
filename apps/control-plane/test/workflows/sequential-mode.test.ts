@@ -40,7 +40,7 @@ describe('sequential run mode', () => {
     void b;
   });
 
-  it('passes every prior result in declared order to later specialists', async () => {
+  it('passes only the immediately prior typed result to later specialists', async () => {
     const runId = newRunId();
     const services = makeServices(runId);
     const a = makeSpecialist('a', { output: { step: 'a' } });
@@ -63,7 +63,6 @@ describe('sequential run mode', () => {
     expect(services.provider.calls.map((call) => call.specialistId)).toEqual(['a', 'b', 'c']);
     const priorResults = (cInputs[0] as { priorResults?: unknown[] }).priorResults;
     expect(priorResults).toEqual([
-      { specialistId: 'a', status: 'completed', output: { step: 'a' } },
       { specialistId: 'b', status: 'completed', output: { step: 'b' } },
     ]);
   });
@@ -130,7 +129,7 @@ describe('sequential run mode', () => {
     expect(types).not.toContain('run.completed');
   });
 
-  it('seeds sequential prior results on resume from all checkpointed outcomes, failures included', async () => {
+  it('seeds sequential resume from only the immediately prior checkpointed outcome', async () => {
     const runId = newRunId();
     const services = makeServices(runId);
     const a = makeSpecialist('a');
@@ -156,7 +155,7 @@ describe('sequential run mode', () => {
     services.provider.program('c', () => new SimulatedCrash('crash before c persisted'));
     await expect(executeRun(options)).rejects.toThrow(SimulatedCrash);
 
-    // Resume: c must see the failure marker for a and the completed output for b.
+    // Resume: c sees only b, the immediately prior completed specialist.
     cInputs.length = 0;
     services.provider.program('c', () => JSON.stringify({ summary: 'c-result' }));
     const outcome = await executeRun(options);
@@ -165,7 +164,6 @@ describe('sequential run mode', () => {
     expect(cInputs).toHaveLength(1);
     const priorResults = (cInputs[0] as { priorResults?: unknown[] }).priorResults;
     expect(priorResults).toEqual([
-      { specialistId: 'a', status: 'failed', errorCode: 'PROVIDER_PERMANENT' },
       { specialistId: 'b', status: 'completed', output: { summary: 'b-result' } },
     ]);
   });

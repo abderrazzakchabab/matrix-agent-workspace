@@ -14,8 +14,8 @@
  * Safety properties:
  * - parallel mode: every specialist receives the same immutable initial input
  *   and results are joined per specialist;
- * - sequential mode: each specialist receives typed `prior_results` in
- *   declared order plus the explicit failure policy;
+ * - sequential mode: each specialist receives only its immediate predecessor's
+ *   typed result plus the explicit failure policy;
  * - retries: only typed transient provider failures, bounded with capped
  *   exponential backoff; attempts and the next retry are persisted before
  *   sleeping;
@@ -53,8 +53,13 @@ import { repositoryReader } from '../agents/specialists/repository-reader';
 import { issueReader } from '../agents/specialists/issue-reader';
 import { prReader } from '../agents/specialists/pr-reader';
 import { withTenant } from '../db/client';
-import { appendEvent, listEvents } from '../db/repositories/event-repository';
+import { listEvents } from '../db/repositories/event-repository';
 import type { TenantContext } from '../db/repositories/run-repository';
+import {
+  enqueueMatrixDeliveryWithClient,
+  publishEvent,
+} from '../events/event-service';
+import { dispatchMatrixDeliveryRequested } from '../inngest/functions/deliver-matrix-event';
 import type { CheckpointStore } from './checkpoint-service';
 import type { CancellationController } from './cancellation';
 
@@ -712,11 +717,20 @@ export async function executeRun(opts: WorkflowOptions): Promise<WorkflowOutcome
         outcomes.push(item.value);
       }
     } else {
-      const priorResults: PriorSpecialistResult[] = outcomes.map((o) =>
-        o.status === 'completed'
-          ? { specialistId: o.specialistId, status: 'completed', output: o.output }
-          : { specialistId: o.specialistId, status: 'failed', errorCode: o.errorCode },
-      );
+      const checkpointedPrior = outcomes.at(-1);
+      let priorResult: PriorSpecialistResult | undefined = checkpointedPrior
+        ? checkpointedPrior.status === 'completed'
+          ? {
+              specialistId: checkpointedPrior.specialistId,
+              status: 'completed',
+              output: checkpointedPrior.output,
+            }
+          : {
+              specialistId: checkpointedPrior.specialistId,
+              status: 'failed',
+              errorCode: checkpointedPrior.errorCode,
+            }
+        : undefined;
       for (const spec of pending) {
         if (await services.cancellation.isCancelled(runId)) {
           return finalizeTerminal(opts, 'cancelled', outcomes, startedAt, 'run.cancelled', {
@@ -728,23 +742,22 @@ export async function executeRun(opts: WorkflowOptions): Promise<WorkflowOutcome
         const input: SpecialistRuntimeInput = {
           prompt: opts.prompt,
           githubContext: opts.githubContext ? { ...opts.githubContext } : undefined,
-          priorResults: priorResults.map((p) => ({ ...p })),
+          priorResults: priorResult ? [{ ...priorResult }] : [],
         };
         const outcome = await runSpecialist(spec, input);
         outcomes.push(outcome);
-        if (outcome.status === 'completed') {
-          priorResults.push({
-            specialistId: outcome.specialistId,
-            status: 'completed',
-            output: outcome.output,
-          });
-        } else {
-          priorResults.push({
-            specialistId: outcome.specialistId,
-            status: 'failed',
-            errorCode: outcome.errorCode,
-          });
-        }
+        priorResult =
+          outcome.status === 'completed'
+            ? {
+                specialistId: outcome.specialistId,
+                status: 'completed',
+                output: outcome.output,
+              }
+            : {
+                specialistId: outcome.specialistId,
+                status: 'failed',
+                errorCode: outcome.errorCode,
+              };
         if (outcome.status === 'failed' && opts.failurePolicy === 'fail_run') {
           return finalizeTerminal(opts, 'failed', outcomes, startedAt, 'run.failed', {
             code: 'SPECIALIST_FAILED',
@@ -930,7 +943,8 @@ export function createPostgresWorkflowRunStore(tenant: TenantContext): WorkflowR
       summary?: Record<string, unknown> | null,
       terminalEvent?: TerminalEvent,
     ): Promise<string | null> {
-      return withTenant(tenant.userId, async (client) => {
+      let outboxEnqueued = false;
+      const applied = await withTenant(tenant.userId, async (client) => {
         const { rows } = await client.query(
           `UPDATE runs
               SET status = $1,
@@ -943,17 +957,34 @@ export function createPostgresWorkflowRunStore(tenant: TenantContext): WorkflowR
         );
         if (rows.length === 0) return null;
         if (terminalEvent) {
-          await client.query('SELECT append_run_event($1, $2, $3, $4, $5, $6)', [
+          const event = await client.query(
+            'SELECT append_run_event($1, $2, $3, $4, $5, $6) AS sequence',
+            [
+              runId,
+              `evt_${randomUUID()}`,
+              terminalEvent.type,
+              1,
+              JSON.stringify(terminalEvent.payload),
+              'room_and_owner',
+            ],
+          );
+          outboxEnqueued = await enqueueMatrixDeliveryWithClient(
+            client,
+            tenant.workspaceId,
             runId,
-            `evt_${randomUUID()}`,
-            terminalEvent.type,
-            1,
-            JSON.stringify(terminalEvent.payload),
-            'room_and_owner',
-          ]);
+            Number(event.rows[0].sequence),
+          );
         }
         return rows[0].status as string;
       });
+      if (outboxEnqueued) {
+        await dispatchMatrixDeliveryRequested({
+          workspaceId: tenant.workspaceId,
+          userId: tenant.userId,
+          runId,
+        });
+      }
+      return applied;
     },
     async saveSpecialistResult(
       runId: string,
@@ -1023,13 +1054,14 @@ export function createPostgresWorkflowEventSink(
 ): WorkflowEventSink {
   return {
     async append(type: string, payload: Record<string, unknown>): Promise<number> {
-      return appendEvent(tenant, runId, {
+      const published = await publishEvent(tenant, runId, {
         id: `evt_${randomUUID()}`,
         type,
         version: 1,
         payload,
         visibility: 'room_and_owner',
       });
+      return published.sequence;
     },
     async list(): Promise<WorkflowEventRecord[]> {
       const rows = await listEvents(tenant, runId);

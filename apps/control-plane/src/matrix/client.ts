@@ -59,28 +59,45 @@ export function isMatrixTokenUnavailable(error: unknown): boolean {
 
 /** Matrix Client-Server API send client (Synapse compatible). */
 export class SynapseDeliveryClient implements MatrixDeliveryClient {
-  constructor(private readonly baseUrl: string = getSynapseBaseUrl()) {}
+  constructor(
+    private readonly baseUrl: string = getSynapseBaseUrl(),
+    private readonly requestTimeoutMs = 10_000,
+  ) {}
 
   async sendMessage(params: MatrixSendParams): Promise<MatrixSendResult> {
     const txnId = encodeURIComponent(params.deliveryKey);
     const url = `${params.homeserverUrl}/_matrix/client/v3/rooms/${encodeURIComponent(
       params.roomId,
     )}/send/m.room.message/${txnId}`;
-    const res = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        authorization: `Bearer ${params.accessToken}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ msgtype: 'm.text', body: params.body }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${params.accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ msgtype: 'm.text', body: params.body }),
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
+      });
+    } catch {
+      throw new MatrixSendError('Matrix send transport failed', 0, true);
+    }
     if (res.status === 429 || res.status >= 500) {
       throw new MatrixSendError(`Matrix send failed with ${res.status}`, res.status, true);
     }
     if (!res.ok) {
       throw new MatrixSendError(`Matrix send failed with ${res.status}`, res.status, false);
     }
-    const data = (await res.json()) as { event_id?: string };
+    let data: { event_id?: string };
+    try {
+      data = (await res.json()) as { event_id?: string };
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new MatrixSendError('Matrix send returned invalid JSON', res.status, true);
+      }
+      throw new MatrixSendError('Matrix send response transport failed', 0, true);
+    }
     return { eventId: data.event_id ?? txnId };
   }
 }
