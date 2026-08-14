@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createControlPlaneClient, type RoomBinding } from '../api/control-plane';
 import { createRunEventClient } from '../api/run-events';
 import { sessionStore, type SessionStore } from '../auth/session-store';
 import { createMatrixClient } from '../matrix/client';
+import { GitHubWorkspaceScreen } from '../screens/GitHubWorkspaceScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RoomBindingScreen } from '../screens/RoomBindingScreen';
 import { RunComposerScreen, type SpecialistOption } from '../screens/RunComposerScreen';
@@ -17,6 +18,7 @@ type RootStackParams = {
   RoomBinding: undefined;
   RunComposer: undefined;
   Run: undefined;
+  GitHubWorkspace: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParams>();
@@ -192,7 +194,22 @@ export function RootNavigator({
           </Stack.Screen>
         ) : null}
         {hasSession ? (
-          <Stack.Screen name="Run" options={{ title: 'Run progress' }}>
+          <Stack.Screen
+            name="Run"
+            options={({ navigation }) => ({
+              title: 'Run progress',
+              headerRight: () => (activeRun && boundRoom ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="GitHub workspace"
+                  onPress={() => navigation.navigate('GitHubWorkspace')}
+                  style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
+                >
+                  <Text style={styles.headerButtonText}>GitHub workspace</Text>
+                </Pressable>
+              ) : null),
+            })}
+          >
             {({ navigation }) => activeRun ? (
               <RunScreen
                 runId={activeRun.runId}
@@ -207,6 +224,18 @@ export function RootNavigator({
             ) : null}
           </Stack.Screen>
         ) : null}
+        {hasSession ? (
+          <Stack.Screen name="GitHubWorkspace" options={{ title: 'GitHub workspace' }}>
+            {() => (boundRoom && activeRun ? (
+              <GitHubWorkspaceScreen
+                workspaceId={boundRoom.workspaceId}
+                runId={activeRun.runId}
+                installationId={process.env.EXPO_PUBLIC_GITHUB_INSTALLATION_ID}
+                controlPlane={controlPlane}
+              />
+            ) : null)}
+          </Stack.Screen>
+        ) : null}
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -215,4 +244,7 @@ export function RootNavigator({
 const styles = StyleSheet.create({
   loading: { alignItems: 'center', backgroundColor: '#f7f7f5', flex: 1, gap: 12, justifyContent: 'center' },
   loadingText: { color: '#58615d', fontSize: 15 },
+  headerButton: { paddingHorizontal: 8, paddingVertical: 6 },
+  headerButtonPressed: { opacity: 0.7 },
+  headerButtonText: { color: '#225c45', fontSize: 14, fontWeight: '800' },
 });
