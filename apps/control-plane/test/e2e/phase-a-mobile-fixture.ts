@@ -1,6 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { Pool } from 'pg';
+import { getAdminPool, runMigrations } from '../../src/db/client';
 
 const specialistFixtures = [
   {
@@ -23,25 +21,15 @@ const specialistFixtures = [
   },
 ] as const;
 
-const adminPool = new Pool({ connectionString: process.env.MIGRATIONS_DATABASE_URL });
-
 export async function resetPhaseAMobileDatabase(): Promise<void> {
-  const migrationsDirectory = join(
-    process.cwd(),
-    'apps/control-plane/src/db/migrations',
-  );
-  const files = (await readdir(migrationsDirectory))
-    .filter((file) => file.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    await adminPool.query(await readFile(join(migrationsDirectory, file), 'utf8'));
-  }
-  await adminPool.query('TRUNCATE rooms, users CASCADE');
+  await runMigrations();
+  await getAdminPool().query('TRUNCATE rooms, users CASCADE');
 }
 
 export async function seedPhaseAMobileSpecialists(workspaceId: string): Promise<void> {
+  const pool = getAdminPool();
   for (const profile of specialistFixtures) {
-    await adminPool.query(
+    await pool.query(
       `INSERT INTO specialist_agents
          (id, workspace_id, name, model, gateway_provider, system_policy,
           tools_allowlist, timeout_ms, enabled)
@@ -58,5 +46,5 @@ export async function seedPhaseAMobileSpecialists(workspaceId: string): Promise<
 }
 
 export async function closePhaseAMobileDatabase(): Promise<void> {
-  await adminPool.end();
+  await getAdminPool().end();
 }

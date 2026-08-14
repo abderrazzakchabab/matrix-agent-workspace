@@ -3,6 +3,7 @@ import {
   executeRun,
   computeExecutionKey,
   computePromptHash,
+  hashConfigSnapshot,
 } from '../../src/workflows/run-workflow';
 import { ProviderTransientError, ProviderPermanentError } from '../../src/agents/provider';
 import {
@@ -238,5 +239,24 @@ describe('retry, resume, cancellation, and timeouts', () => {
     expect(outcome.status).toBe('failed');
     const failed = (await services.events.list()).find((e) => e.type === 'run.failed');
     expect(failed?.payload.code).toBe('EXECUTION_KEY_MISMATCH');
+  });
+
+  it('hashes config snapshots identically to their JSONB round-trip', () => {
+    const runId = newRunId();
+    const promptHash = computePromptHash('summarize issues');
+    const snapshot = {
+      mode: 'parallel',
+      githubContext: undefined,
+      specialists: [{ id: 'a', model: 'm', timeoutMs: 1000, notes: undefined }],
+      tags: [undefined, 'kept'],
+    };
+    const roundTripped = JSON.parse(JSON.stringify(snapshot)) as Record<string, unknown>;
+    expect(computeExecutionKey(runId, promptHash, snapshot)).toBe(
+      computeExecutionKey(runId, promptHash, roundTripped),
+    );
+    expect(hashConfigSnapshot(snapshot)).toBe(hashConfigSnapshot(roundTripped));
+    expect(hashConfigSnapshot({ mode: 'parallel', githubContext: undefined })).toBe(
+      hashConfigSnapshot({ mode: 'parallel' }),
+    );
   });
 });
