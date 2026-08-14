@@ -104,8 +104,8 @@ CREATE POLICY github_write_grants_insert ON github_write_grants FOR INSERT
   WITH CHECK (workspace_id = ANY (app_workspace_ids()) AND granted_by = app_user_id());
 DROP POLICY IF EXISTS github_write_grants_update ON github_write_grants;
 CREATE POLICY github_write_grants_update ON github_write_grants FOR UPDATE
-  USING (workspace_id = ANY (app_workspace_ids()))
-  WITH CHECK (workspace_id = ANY (app_workspace_ids()));
+  USING (workspace_id = ANY (app_workspace_ids()) AND granted_by = app_user_id())
+  WITH CHECK (workspace_id = ANY (app_workspace_ids()) AND granted_by = app_user_id());
 DROP POLICY IF EXISTS github_write_grants_delete ON github_write_grants;
 CREATE POLICY github_write_grants_delete ON github_write_grants FOR DELETE
   USING (workspace_id = ANY (app_workspace_ids()));
@@ -119,8 +119,8 @@ CREATE POLICY mutation_approvals_insert ON mutation_approvals FOR INSERT
   WITH CHECK (workspace_id = ANY (app_workspace_ids()) AND user_id = app_user_id());
 DROP POLICY IF EXISTS mutation_approvals_update ON mutation_approvals;
 CREATE POLICY mutation_approvals_update ON mutation_approvals FOR UPDATE
-  USING (workspace_id = ANY (app_workspace_ids()))
-  WITH CHECK (workspace_id = ANY (app_workspace_ids()));
+  USING (workspace_id = ANY (app_workspace_ids()) AND user_id = app_user_id())
+  WITH CHECK (workspace_id = ANY (app_workspace_ids()) AND user_id = app_user_id());
 DROP POLICY IF EXISTS mutation_approvals_delete ON mutation_approvals;
 CREATE POLICY mutation_approvals_delete ON mutation_approvals FOR DELETE
   USING (workspace_id = ANY (app_workspace_ids()));
@@ -134,8 +134,8 @@ CREATE POLICY github_mutation_commands_insert ON github_mutation_commands FOR IN
   WITH CHECK (workspace_id = ANY (app_workspace_ids()) AND user_id = app_user_id());
 DROP POLICY IF EXISTS github_mutation_commands_update ON github_mutation_commands;
 CREATE POLICY github_mutation_commands_update ON github_mutation_commands FOR UPDATE
-  USING (workspace_id = ANY (app_workspace_ids()))
-  WITH CHECK (workspace_id = ANY (app_workspace_ids()));
+  USING (workspace_id = ANY (app_workspace_ids()) AND user_id = app_user_id())
+  WITH CHECK (workspace_id = ANY (app_workspace_ids()) AND user_id = app_user_id());
 DROP POLICY IF EXISTS github_mutation_commands_delete ON github_mutation_commands;
 CREATE POLICY github_mutation_commands_delete ON github_mutation_commands FOR DELETE
   USING (workspace_id = ANY (app_workspace_ids()));

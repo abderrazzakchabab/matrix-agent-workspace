@@ -39,6 +39,8 @@ interface SetupResult {
   worker: MutationWorker;
   commandStore: MutationCommandStore;
   approvalId: string;
+  grantStore: InMemoryWriteGrantStore;
+  advanceClock(ms: number): void;
 }
 
 async function setup(fixture: GithubFixture, options: { worker?: boolean } = {}): Promise<SetupResult> {
@@ -88,7 +90,7 @@ async function setup(fixture: GithubFixture, options: { worker?: boolean } = {})
     worker: options.worker === false ? null : worker,
     now: () => clock.now,
   };
-  return { deps, worker, commandStore, approvalId: approval.id };
+  return { deps, worker, commandStore, approvalId: approval.id, grantStore, advanceClock(ms: number) { clock.now += ms; } };
 }
 
 /** Wraps a store so the wrapped method fails exactly once (crash simulation). */
@@ -230,6 +232,47 @@ describe('GitHub mutation command idempotency', () => {
       ).rejects.toMatchObject({ code: 'COMMAND_NOT_ALLOWED', status: 422 });
       expect(fixture.state().mutationRequests).toHaveLength(0);
     }
+  });
+
+  it('returns the existing command for a retry after the approval TTL or grant revocation', async () => {
+    const { deps, approvalId, grantStore, advanceClock } = await setup(fixture);
+    const input = commandInput({ approvalId, idempotencyKey: 'expiry_retry_key' });
+    const first = await enqueueMutationCommand(input, deps);
+    expect(first.command.status).toBe('completed');
+    expect(fixture.state().mutationRequests).toHaveLength(1);
+
+    // The approval TTL passes: a retry with the same key still returns the
+    // existing command/result instead of failing with APPROVAL_EXPIRED.
+    advanceClock(APPROVAL_DEFAULT_TTL_MS + 1);
+    const retried = await enqueueMutationCommand(input, deps);
+    expect(retried.replayed).toBe(true);
+    expect(retried.command.id).toBe(first.command.id);
+    expect(retried.command.status).toBe('completed');
+    expect(fixture.state().mutationRequests).toHaveLength(1);
+
+    // A revoked grant does not block the replay either.
+    const grant = (await grantStore.findGrant({
+      workspaceId: 'workspace-a',
+      repository: 'acme/widget',
+      scope: 'issues:write',
+    }))!;
+    await grantStore.setGrantStatus({
+      id: grant.id,
+      workspaceId: 'workspace-a',
+      status: 'revoked',
+      now: deps.now,
+    });
+    const afterRevoke = await enqueueMutationCommand(input, deps);
+    expect(afterRevoke.replayed).toBe(true);
+    expect(afterRevoke.command.id).toBe(first.command.id);
+    expect(fixture.state().mutationRequests).toHaveLength(1);
+
+    // Replays never record denial audits or duplicate audit rows.
+    const audits = (await deps.auditStore.list({ workspaceId: 'workspace-a' })).items;
+    expect(audits.filter((a) => a.outcome === 'denied')).toHaveLength(0);
+    expect(
+      audits.filter((a) => a.commandId === first.command.id && a.outcome === 'completed'),
+    ).toHaveLength(1);
   });
 
   it('records one audit trail for duplicate enqueue and retry', async () => {
