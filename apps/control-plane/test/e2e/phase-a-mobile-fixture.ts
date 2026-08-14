@@ -44,7 +44,3 @@ export async function seedPhaseAMobileSpecialists(workspaceId: string): Promise<
     );
   }
 }
-
-export async function closePhaseAMobileDatabase(): Promise<void> {
-  await getAdminPool().end();
-}

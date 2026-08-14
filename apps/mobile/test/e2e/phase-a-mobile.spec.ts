@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
-  closePhaseAMobileDatabase,
   resetPhaseAMobileDatabase,
   seedPhaseAMobileSpecialists,
 } from '../../../control-plane/test/e2e/phase-a-mobile-fixture';
@@ -159,10 +158,6 @@ test.beforeAll(async () => {
     const response = await fetch(`${url}/__fixture/reset`, { method: 'POST' });
     expect(response.ok, await response.text()).toBe(true);
   }
-});
-
-test.afterAll(async () => {
-  await closePhaseAMobileDatabase();
 });
 
 test('Phase A mobile client authenticates, binds, replays, orders, fails safely, and cancels', async ({ page }) => {
