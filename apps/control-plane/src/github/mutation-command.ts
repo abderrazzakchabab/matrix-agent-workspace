@@ -281,6 +281,17 @@ export class InMemoryMutationCommandStore implements MutationCommandStore {
   }
 }
 
+/** Preserve sub-millisecond precision: `String(Date)` drops milliseconds, so
+ * round-tripping through `String(row.created_at)` would truncate timestamps
+ * to whole seconds and break keyset cursors that order by (created_at, id). */
+function toIsoTimestamp(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' || typeof value === 'number') {
+    return new Date(value).toISOString();
+  }
+  return new Date().toISOString();
+}
+
 function mapCommandRow(row: Record<string, unknown>): MutationCommand {
   return {
     id: String(row.id),
@@ -297,8 +308,8 @@ function mapCommandRow(row: Record<string, unknown>): MutationCommand {
     providerResult: (row.provider_result as Record<string, unknown> | null) ?? null,
     attempts: Number(row.attempts ?? 0),
     errorCode: (row.error_code as string | null) ?? null,
-    createdAt: new Date(String(row.created_at)).toISOString(),
-    updatedAt: new Date(String(row.updated_at)).toISOString(),
+    createdAt: toIsoTimestamp(row.created_at),
+    updatedAt: toIsoTimestamp(row.updated_at),
   };
 }
 
@@ -527,7 +538,7 @@ function mapAuditRow(row: Record<string, unknown>): AuditRecord {
     commandId: (row.command_id as string | null) ?? null,
     outcome: String(row.outcome),
     details: (row.details as Record<string, unknown> | null) ?? {},
-    createdAt: new Date(String(row.created_at)).toISOString(),
+    createdAt: toIsoTimestamp(row.created_at),
   };
 }
 
@@ -607,7 +618,9 @@ export const databaseAuditStore: AuditStore = {
         params.push(createdAt, id);
       }
       const { rows } = await client.query(
-        `SELECT * FROM ${AUDIT_RECORDS.table}
+        `SELECT *, to_char(${AUDIT_RECORDS.createdAt} AT TIME ZONE 'UTC',
+                        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS __cursor_created_at
+          FROM ${AUDIT_RECORDS.table}
           ${where}
           ORDER BY ${AUDIT_RECORDS.createdAt} DESC, ${AUDIT_RECORDS.id} DESC
           LIMIT ${pageSize}`,
@@ -616,8 +629,14 @@ export const databaseAuditStore: AuditStore = {
       const items = rows.map((row) => mapAuditRow(row as Record<string, unknown>));
       let nextCursor: string | undefined;
       if (items.length === pageSize && items.length > 0) {
+        // Encode the cursor from the raw column value (microsecond
+        // precision): a JS Date cannot represent the sub-millisecond digits
+        // Postgres stores, so rows sharing a millisecond would otherwise
+        // collide on the cursor key and silently drop from the next page.
         const last = items[items.length - 1]!;
-        nextCursor = encodeAuditCursor(last.createdAt, last.id);
+        const rawCreatedAt = (rows[items.length - 1] as Record<string, unknown>)
+          .__cursor_created_at as string | undefined;
+        nextCursor = encodeAuditCursor(rawCreatedAt ?? last.createdAt, last.id);
       }
       return { items, ...(nextCursor ? { nextCursor } : {}) };
     });
