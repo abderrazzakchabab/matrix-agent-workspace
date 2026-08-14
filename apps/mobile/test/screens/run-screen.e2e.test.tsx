@@ -53,7 +53,13 @@ describe('RunScreen flow', () => {
     expect(await screen.findByText('Cancellation requested')).toBeTruthy();
     expect(dispose).not.toHaveBeenCalled();
 
-    store.addEvent(terminal('run-1', 9, 'run.cancelled'));
+    expect(store.addEvent({
+      ...terminal('run-1', 8, 'run.cancelled'),
+      payload: undefined,
+    })).toBe(false);
+    expect(screen.queryByLabelText('Run Cancelled')).toBeNull();
+    expect(store.addEvent(terminal('run-1', 9, 'run.cancelled'))).toBe(true);
+    expect(store.addEvent(terminal('run-1', 9, 'run.cancelled'))).toBe(false);
 
     await waitFor(() => {
       expect(screen.getAllByLabelText('Run Cancelled')).toHaveLength(1);

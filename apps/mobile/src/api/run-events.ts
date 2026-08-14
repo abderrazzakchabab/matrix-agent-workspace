@@ -110,7 +110,9 @@ export function createRunEventClient(options: {
   return {
     connect(runId) {
       let disposed = false;
-      let terminalReceived = false;
+      let terminalReceived = options.store.get(runId).events.some((event) => (
+        TERMINAL_TYPES.has(event.type)
+      ));
       let reconnectAttempt = 0;
       let reconnectHandle: unknown;
       let abortController: AbortController | null = null;
@@ -134,9 +136,9 @@ export function createRunEventClient(options: {
         const candidate = eventFromFrame(frame, runId);
         if (!candidate) return;
         if (options.store.addEvent(candidate)) reconnectAttempt = 0;
-        if (typeof candidate.type === 'string' && TERMINAL_TYPES.has(candidate.type)) {
-          terminalReceived = true;
-        }
+        terminalReceived = options.store.get(runId).events.some((event) => (
+          TERMINAL_TYPES.has(event.type)
+        ));
       }
 
       function consumeText(text: string, flush: boolean, state: { buffer: string }): void {
