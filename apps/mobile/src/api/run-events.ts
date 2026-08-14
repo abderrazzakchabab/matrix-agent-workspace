@@ -78,13 +78,17 @@ function eventFromFrame(frame: SseFrame, expectedRunId: string): Record<string, 
     if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
     const record = body as Record<string, unknown>;
     if (record.runId !== expectedRunId) return null;
-    if (record.sequence !== undefined && record.sequence !== sequence) return null;
+    if (
+      typeof record.sequence !== 'number'
+      || !Number.isSafeInteger(record.sequence)
+      || record.sequence !== sequence
+    ) return null;
     if (
       frame.event === null
       || typeof record.type !== 'string'
       || frame.event !== record.type
     ) return null;
-    return { ...record, sequence };
+    return record;
   } catch {
     return null;
   }

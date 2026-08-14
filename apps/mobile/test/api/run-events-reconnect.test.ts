@@ -200,6 +200,29 @@ describe('mobile run event replay', () => {
     connection.dispose();
   });
 
+  it('rejects a terminal frame missing its body sequence before accepting a valid terminal', async () => {
+    const missingSequence = event(9, 'run.completed') as Record<string, unknown>;
+    delete missingSequence.sequence;
+    const fetch = vi.fn<RunEventsFetch>(async () => response([
+      `id: 9\nevent: run.completed\ndata: ${JSON.stringify(missingSequence)}\n\n`,
+      `id: 10\nevent: run.completed\ndata: ${JSON.stringify(event(10, 'run.completed'))}\n\n`,
+    ]));
+    const store = createRunStore();
+    const client = createRunEventClient({
+      baseUrl: 'https://control.example.test',
+      sessionStore: { load: async () => ({ cookie: 'opaque-session' }), save: vi.fn(), clear: vi.fn() },
+      store,
+      fetch,
+    });
+
+    const connection = client.connect('run-1');
+    await eventually(() => expect(store.get('run-1').highestSequence).toBe(10));
+
+    expect(store.get('run-1').events).toEqual([event(10, 'run.completed')]);
+    expect(fetch).toHaveBeenCalledOnce();
+    connection.dispose();
+  });
+
   it('rejects malformed terminal envelopes before accepting a valid terminal event', async () => {
     const missingVisibility = event(10, 'run.completed') as Record<string, unknown>;
     delete missingVisibility.visibility;

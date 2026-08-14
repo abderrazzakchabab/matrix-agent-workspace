@@ -1,0 +1,692 @@
+{
+  "apps/control-plane/next.config.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "27a2e9f1950a4f58c922674e7c6054bb",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/package.json": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "c58bb000a50847753ada111e57e06758",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/agents/agent-config.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "d1a13c1d0ed8e1ff447b96729b2afc0f",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/agents/prompt-envelope.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "9babb3930cc3755100effa59b15e9656",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/agents/provider.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "d5cfb7ae41ffc2359d0a95e3268605b7",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/agents/specialists/issue-reader.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "55c6642897d2a5d59ba25421e5e9e8f1",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/agents/specialists/pr-reader.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "b217f658c8c57d972788d7645fed58f2",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/agents/specialists/repository-reader.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "df6c14975082dd6655fe7da531f655af",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/auth/matrix/session/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "9818cd3e566f7aa5e0592ab467194752",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/auth/session/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "8d1223b839df9876642a0e3897d4fef8",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/github/oauth/callback/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "d1d1bdc70fe7c3cfc8b8fb796b74f2ae",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/github/oauth/start/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "1f05454aa58c0ac935c123db93e8b0e5",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/github/repositories/[owner]/[repo]/issues/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "731ae430b2bfc534e0f4475962cb2a3f",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/github/repositories/[owner]/[repo]/pulls/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "87f806303ea6164789bb08addcff80da",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/github/repositories/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "80c903115eeea47bb35420c653bf7ee1",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/health/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "c3f59050864c95a9fe6c8a047de96973",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/inngest/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "6d9ddac6abd6dbad55472ab07e3b8726",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/rooms/[roomId]/binding/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "0099b289851b768ded5d5a191e25ce9f",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/rooms/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "81b897397128e83e33772ea00c4c8d47",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/runs/[runId]/cancel/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "a0898ce6315acbfe0dd4a593923238e2",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/runs/[runId]/events/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "77473a2d306376e9b7f527901ece57f4",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/runs/[runId]/route.ts": {
+    "mtime": 1786660238.4453905,
+    "ast_hash": "a999fb09fc972bba5bf6b2da6e1262fd",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/workspaces/[workspaceId]/runs/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "3c9062fd37c8a9b67b0b28e794b6526d",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/app/api/workspaces/route.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "cf1eb82dc1db7141be4440ecf2c9a550",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/auth/authorization.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "b07c642b34d882af29fc762e3ed6c6d5",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/auth/matrix-token.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "7c51e9a60c7b2458c2febb16b975148d",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/auth/session-service.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "8cb9c0ed2097b1b3e648ce5c5956ee5a",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/client.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "924e0c1a384865ac8239884cc3d3e46e",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/migrations/0001_identity_and_bindings.sql": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "987c98cda7b6c23d7761633424f06bc5",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/migrations/0002_runs_events_memory.sql": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "e134343e26b8da9092c1fb62c07db3b0",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/migrations/0003_matrix_outbox_sweeper.sql": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "0849055e007d09d739cbc72d5378ab0d",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/repositories/event-repository.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "f2f50db7553a129076f39e614d9ef554",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/repositories/memory-repository.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "14dc18a2dce5e48bb96a28d982b09e1f",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/repositories/run-repository.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "aef9b03ac8856df76bc3a613f1711543",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/agents.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "fd7b8089d2b109d6a98ea7f921d70a48",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/checkpoints.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "7c657afb0c008a18d56d7072d41cfa08",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/events.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "be3333269ab8fabcd1e4a1ecd0f11420",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/github.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "0c2c34bf1a9330c640a4b9780e0aa218",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/memory.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "ac8f5d061d1b4a5b13252027444f9cc9",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/outbox.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "5517a5e555f65d3125f140d833543236",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/rooms.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "8f90ca0ca66565aba3e747522b3609f6",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/runs.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "691be82ec036cb714e2f3346ea5a376a",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/sessions.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "e20871084d1f9519c50ef45866354f9a",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/users.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "0e49c8896115d26daada7e2e42946e39",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/db/schema/workspaces.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "8e18d556c09d1b87d60e6ba5f454da74",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/events/event-service.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "3a0efb99e18f6361fe13871f432c7a4f",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/events/sse-stream.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "317990e481e7a22a7e138f04f28a625f",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/github/app-auth.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "5369435048bce342159396e95f23ad22",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/github/normalizers.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "7c2d44aaf1e07e3d3d562bef6cf11a3b",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/github/oauth.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "3d4fad7cfeef9363db552510a27ab40b",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/github/read-client.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "972e53473168ede672eba811d93969fc",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/inngest/client.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "8ad35b42ebcf856c6ca3606a0006f075",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/inngest/functions/deliver-matrix-event.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "efa01c06c46fe889eb5cfedc58696b6a",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/inngest/functions/run-requested.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "0c2325a136cc2a5634a24ac7965bf32b",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/matrix/client.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "e4e288f215e73ab1b33e07e1bc431d17",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/matrix/delivery-worker.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "6cd986c24a90417603a48bd8ff578b66",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/matrix/message-renderer.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "69225f6b6e40a1dfed52074d0e6b2b00",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/security/envelope-encryption.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "3daeee05a0591d728e71df0b4bf7fb87",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/security/redaction.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "00e61f60a2d48f37e2853a34f78a2445",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/workflows/cancellation.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "988e14ab9e89ad8752c19f54096b9325",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/workflows/checkpoint-service.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "f6fe4eee7f14196052a4908dfa8cb86e",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/src/workflows/run-workflow.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "8460713d10df088e4646fcf2c3ff93a4",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/agents/prompt-injection.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "55c32d19f02363e75f0da17f7dcab6d7",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/api/run-launch.test.ts": {
+    "mtime": 1786660173.5520055,
+    "ast_hash": "01f4e70056d03691d1f320e096d354b8",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/auth/matrix-session.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "25cc8582e563ce804e1ada7b0dfff157",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/auth/rls-ownership.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "f71f9fce7d6f6e985ed7e7ee74bb2981",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/auth/room-binding.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "2d9a5cb41d25b3819b9dd9f80752fafe",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/auth/session-cipher.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "5f36264f9a9aa589dc9a6ca11629da2d",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/auth/support.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "b364a9d1e8ac516a91ef25bf8c571dc4",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/auth/workspace-creation.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "24a9977288610373bb30faffe28526d2",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/db/event-sequence.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "11c70a15ed74b725a48fdf75f878e3a3",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/db/support.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "7f1a5cfbb72c79dfe25adcbc32eb662a",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/db/tenant-isolation.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "16a0bc75a1a26afb1fe62653ddf56a31",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/e2e/phase-b-backend.spec.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "eef8e14e362b62cc9754caafbd77ce66",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/events/sse-replay.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "f1f1d5cafa7211b581d8d336dd6aca96",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/github/oauth-state.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "22853b0348daaf980c8bdf57b3b9bf46",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/github/pagination.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "b94eb57655164c61654b6f6f82de9158",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/github/read-only.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "4cf3016ee33817a15621d3fe007cf337",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/health.route.test.ts": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "5521554694710a85b5786c5fa6c7fb51",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/matrix/client.test.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "4195a7b6d583c641ac1f78556ed4d551",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/matrix/delivery-deduplication.test.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "2c11d1a820edd033e1825b0c6f08faaa",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/matrix/terminal-delivery.test.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "eccc7dbb6300dc745ecb7b8b6010df2f",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/security/encryption-redaction.test.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "15d07a7e82296ac0c08de40ab3aaedad",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/workflows/parallel-mode.test.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "fcb4395780104de33541bfd205e82eaf",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/workflows/retry-resume-cancel.test.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "1750137a686c887b52963b5e2eed6946",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/workflows/sequential-mode.test.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "ba274918a599ce7597ba36c03c15272b",
+    "semantic_hash": ""
+  },
+  "apps/control-plane/test/workflows/support.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "d2a94c4033406c951eb579c863072a98",
+    "semantic_hash": ""
+  },
+  "apps/mobile/App.tsx": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "3a2f53638eb2e4ea5fb0616cfc0e80d5",
+    "semantic_hash": ""
+  },
+  "apps/mobile/app.json": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "bce41fbb16810b6f2d7bd18a4195e702",
+    "semantic_hash": ""
+  },
+  "apps/mobile/package.json": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "829f509735fe7dbb72d7aea68c58b68c",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/api/control-plane.ts": {
+    "mtime": 1786660221.929038,
+    "ast_hash": "e655d8352d7cc529790d9f15e3e1136b",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/api/run-events.ts": {
+    "mtime": 1786698366.873474,
+    "ast_hash": "3a027a2f18c9209fdb1afe45cca754fc",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/auth/session-store.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "992028a72df36ff977999006dd52c204",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/components/RunTimeline.tsx": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "c38b905c7f2cd1b7fda61e0cf9e89bd4",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/components/TerminalResult.tsx": {
+    "mtime": 1786660259.793846,
+    "ast_hash": "e46c8a9d024d6f750ac85b0b12a27c2f",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/matrix/client.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "6501cd614f567f8aa9a002d778d8e986",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/navigation/RootNavigator.tsx": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "cba249a143bda995dcedd63600772a18",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/screens/LoginScreen.tsx": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "e30ded0a825d91c49d622743e206c3a5",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/screens/RoomBindingScreen.tsx": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "e851fc96562aad97d3e2d52f94149930",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/screens/RunComposerScreen.tsx": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "c58664500d903d2481ceb5958d67a361",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/screens/RunScreen.tsx": {
+    "mtime": 1786690480.9534512,
+    "ast_hash": "ae31497d9a6a937b17fdec8076a90c09",
+    "semantic_hash": ""
+  },
+  "apps/mobile/src/state/run-store.ts": {
+    "mtime": 1786696569.5390358,
+    "ast_hash": "12ffd44e5dc526618f3fac6fa509b67a",
+    "semantic_hash": ""
+  },
+  "apps/mobile/test/api/run-events-reconnect.test.ts": {
+    "mtime": 1786698351.397143,
+    "ast_hash": "3c2dd4e030f2aa041d040a70ea8267b2",
+    "semantic_hash": ""
+  },
+  "apps/mobile/test/auth/session-store.test.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "e80523f4d88036c525620166072d45d4",
+    "semantic_hash": ""
+  },
+  "apps/mobile/test/components/run-timeline.test.tsx": {
+    "mtime": 1786696593.7795515,
+    "ast_hash": "7f2ab36ad5e2c32c636dc7b0a9de762a",
+    "semantic_hash": ""
+  },
+  "apps/mobile/test/navigation/root-navigator.test.tsx": {
+    "mtime": 1786660145.9954176,
+    "ast_hash": "e117ef6ecbcaa7cc5fce90aabd10ad6a",
+    "semantic_hash": ""
+  },
+  "apps/mobile/test/screens/room-binding.test.tsx": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "c16703b037d931164552b2d4ae1983a2",
+    "semantic_hash": ""
+  },
+  "apps/mobile/test/screens/run-composer.test.tsx": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "03e9dcf1957a2f372df4f4ff3dc3332b",
+    "semantic_hash": ""
+  },
+  "apps/mobile/test/screens/run-screen.e2e.test.tsx": {
+    "mtime": 1786696597.323627,
+    "ast_hash": "7b47ef20e86d249382a6ecedb3ed9b1c",
+    "semantic_hash": ""
+  },
+  "apps/mobile/tsconfig.json": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "5a366751373b37354bc3dd735e6f9a45",
+    "semantic_hash": ""
+  },
+  "infra/postgres/init.sql": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "01fc44f7d1ac45c2cebfac76aa0de575",
+    "semantic_hash": ""
+  },
+  "package.json": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "445358b1830d97408321c974677b8798",
+    "semantic_hash": ""
+  },
+  "packages/contracts/package.json": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "e10be5a29a96480d731004787a826a39",
+    "semantic_hash": ""
+  },
+  "packages/contracts/src/errors.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "d5851f579ce0fb66190f7fa3788cc658",
+    "semantic_hash": ""
+  },
+  "packages/contracts/src/events.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "253b01108ab5850fa38f584d17daccd5",
+    "semantic_hash": ""
+  },
+  "packages/contracts/src/github.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "586186890723a65c5bb2d40dcad15e04",
+    "semantic_hash": ""
+  },
+  "packages/contracts/src/index.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "a0770a49953d119aa96444222cf7ee43",
+    "semantic_hash": ""
+  },
+  "packages/contracts/src/run.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "28fdbe1ba7254843a38155fa3ce3f205",
+    "semantic_hash": ""
+  },
+  "packages/contracts/test/contracts.test.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "b61df67fc0cb35d44e000e1bdd1b0ff3",
+    "semantic_hash": ""
+  },
+  "playwright.config.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "a5b99857f6aef3869c28829f66503e13",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/github/server.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "3ede9a2bafd64f3a26ef97ac56286f55",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/github/wiremock.json": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "63596821e4aa00b0ee463ae8c8b77dbb",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/model/server.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "59a81b7bc9aa212310ff0a3b345b6104",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/synapse/seed.sh": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "3502e34fa16f81030b0c874d3b5c8f7a",
+    "semantic_hash": ""
+  },
+  "tsconfig.base.json": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "4722854f5f94cee8b0ac1b64fa46bee5",
+    "semantic_hash": ""
+  },
+  "tsconfig.json": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "1300ac1cd1bab10482038f4ed888ad7d",
+    "semantic_hash": ""
+  },
+  "vitest.config.ts": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "96a75ec3e3b1f78488a873cf91c4670a",
+    "semantic_hash": ""
+  },
+  ".github/workflows/ci.yml": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "8e20d95af111137f238b6fd0590641bb",
+    "semantic_hash": ""
+  },
+  ".serena/project.yml": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "7ed658b9cf0ef7ef2b4feff558e75c1e",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "4615d41cca616b38eb6b0edf02a77fcd",
+    "semantic_hash": ""
+  },
+  "CLAUDE.md": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "4615d41cca616b38eb6b0edf02a77fcd",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1786659576.8752675,
+    "ast_hash": "39f156bc97df8c30bff93c6dcab2cd87",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/plans/2026-08-12-matrix-agent-workspace.md": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "eea9434f87fbcc216a2f93a79218488e",
+    "semantic_hash": ""
+  },
+  "infra/docker-compose.test.yml": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "aa9ec87c35a2e1b490fc2930e8f4f440",
+    "semantic_hash": ""
+  },
+  "infra/synapse/homeserver.yaml": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "ba8e48b3cf3e1c660628ad6b22b58609",
+    "semantic_hash": ""
+  },
+  "pnpm-workspace.yaml": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "de6b9e7bb156f8dc12f68dc3d1a0b649",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/README.md": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "f5d13eaed13d1d59a6c2bb3c045fdda8",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/github/README.md": {
+    "mtime": 1786659576.8792675,
+    "ast_hash": "6c6408659e8c420131de6c8f1ef46376",
+    "semantic_hash": ""
+  }
+}
