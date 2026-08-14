@@ -11,6 +11,9 @@ const secureStore = vi.hoisted(() => ({
 
 vi.mock('expo-secure-store', () => secureStore);
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-random-uuid' }));
+vi.mock('expo/fetch', () => ({
+  fetch: (input: string, init?: RequestInit) => globalThis.fetch(input, init),
+}));
 vi.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -113,6 +116,37 @@ describe('RootNavigator', () => {
           }),
         };
       }
+      if (path === '/api/runs/run_1' && (!init?.method || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: async () => ({
+            runId: 'run_1',
+            matrixDeliveries: [{ sequence: 1, status: 'delivered' }],
+          }),
+        };
+      }
+      if (path === '/api/runs/run_1/events' && init?.method === 'GET') {
+        const event = {
+          id: 'evt_run_1_1',
+          runId: 'run_1',
+          sequence: 1,
+          type: 'run.completed',
+          version: 1,
+          occurredAt: '2026-08-12T12:00:00.000Z',
+          visibility: 'room_and_owner',
+          payload: {},
+        };
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          body: null,
+          text: async () => `id: 1\nevent: run.completed\ndata: ${JSON.stringify(event)}\n\n`,
+          json: async () => ({}),
+        };
+      }
       throw new Error(`Unexpected request: ${init?.method ?? 'GET'} ${path}`);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -144,5 +178,8 @@ describe('RootNavigator', () => {
         idempotencyKey: 'mobile_test-random-uuid',
       });
     });
+    expect(await screen.findByText('Live progress')).toBeTruthy();
+    expect(await screen.findByLabelText('Run Completed')).toBeTruthy();
+    expect(await screen.findAllByText('Delivered to Matrix')).toHaveLength(1);
   });
 });

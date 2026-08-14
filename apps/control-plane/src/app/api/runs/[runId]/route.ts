@@ -2,7 +2,7 @@
  * `GET /api/runs/:runId` — run retrieval.
  *
  * Returns status, mode, bound room, specialist statuses, `lastSequence`,
- * `cancelRequestedAt`, and the terminal summary — visible only to the run
+ * Matrix delivery statuses, `cancelRequestedAt`, and the terminal summary — visible only to the run
  * owner or workspace members (RLS-scoped). A missing or unauthorized run
  * returns `404 RUN_NOT_FOUND` without revealing whether it exists.
  */
@@ -63,6 +63,20 @@ export async function GET(
       return rows[0].last as number;
     });
 
+    const matrixDeliveries = await withTenant(auth.userId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT event_sequence, status
+           FROM outbox_messages
+          WHERE aggregate_key = $1 AND workspace_id = $2
+          ORDER BY event_sequence`,
+        [runId, run.workspace_id],
+      );
+      return rows.map((row) => ({
+        sequence: Number(row.event_sequence),
+        status: row.status as string,
+      }));
+    });
+
     return NextResponse.json({
       requestId,
       runId,
@@ -72,6 +86,7 @@ export async function GET(
       roomId: run.room_id ?? null,
       specialists,
       lastSequence,
+      matrixDeliveries,
       cancelRequestedAt: run.cancel_requested_at ?? null,
       terminalSummary: run.terminal_summary ?? null,
     });

@@ -25,7 +25,7 @@ interface RunComposerScreenProps {
   controlPlane: Pick<ControlPlaneApi, 'launchRun'>;
   specialists: SpecialistOption[];
   createIdempotencyKey?: () => string;
-  onRunStarted?(run: RunResponseType): void;
+  onRunStarted?(run: RunResponseType, request: RunRequestType): void;
 }
 
 type ExecutionMode = RunRequestType['mode'];
@@ -84,7 +84,7 @@ export function RunComposerScreen({
       const run = await controlPlane.launchRun(binding.workspaceId, request, requestIdempotencyKey);
       pendingLaunch.current = null;
       setQueuedRun(run);
-      onRunStarted?.(run);
+      onRunStarted?.(run, request);
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
