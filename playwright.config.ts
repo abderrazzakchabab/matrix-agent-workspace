@@ -4,6 +4,7 @@ const DEFAULT_PHASE_B_DATABASE_URL =
   'postgresql://matrix_app:matrix_app_password@127.0.0.1:5432/matrix_test';
 const DEFAULT_PHASE_B_MIGRATIONS_DATABASE_URL =
   'postgresql://matrix:matrix_test_password@127.0.0.1:5432/matrix_test';
+const mobileWebUrl = process.env.MOBILE_WEB_URL ?? 'http://localhost:19006';
 
 function databaseTarget(value: string, variable: string): {
   host: string;
@@ -58,7 +59,9 @@ const fixtureEnv: Record<string, string> = {
   ...Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
   ),
-  CONTROL_PLANE_URL: process.env.CONTROL_PLANE_URL ?? 'http://127.0.0.1:3000',
+  CONTROL_PLANE_URL: process.env.CONTROL_PLANE_URL ?? 'http://localhost:3000',
+  MOBILE_WEB_URL: mobileWebUrl,
+  MOBILE_WEB_ORIGIN: new URL(mobileWebUrl).origin,
   PHASE_B_DATABASE_URL: phaseBDatabaseUrl,
   PHASE_B_MIGRATIONS_DATABASE_URL: phaseBMigrationsDatabaseUrl,
   DATABASE_URL: phaseBDatabaseUrl,
@@ -90,6 +93,7 @@ const fixtureEnv: Record<string, string> = {
   INNGEST_DEV: process.env.INNGEST_DEV ?? 'http://127.0.0.1:8288',
   INNGEST_EVENT_KEY: process.env.INNGEST_EVENT_KEY ?? 'phase-b-fixture-event-key',
   PHASE_B_FIXTURE_MODE: process.env.PHASE_B_FIXTURE_MODE ?? '1',
+  PHASE_A_FIXTURE_MODE: process.env.PHASE_A_FIXTURE_MODE ?? '1',
   SSE_POLL_INTERVAL_MS: process.env.SSE_POLL_INTERVAL_MS ?? '25',
   SSE_HEARTBEAT_INTERVAL_MS: process.env.SSE_HEARTBEAT_INTERVAL_MS ?? '100',
 };
@@ -106,11 +110,25 @@ export default defineConfig({
     baseURL: fixtureEnv.CONTROL_PLANE_URL,
     trace: 'on-first-retry',
   },
-  webServer: {
-    command: 'pnpm --filter @matrix/control-plane exec next dev -H 0.0.0.0',
-    url: `${fixtureEnv.CONTROL_PLANE_URL}/api/health`,
-    reuseExistingServer: false,
-    timeout: 120_000,
-    env: fixtureEnv,
-  },
+  webServer: [
+    {
+      command: 'pnpm --filter @matrix/control-plane exec next dev -H 0.0.0.0',
+      url: `${fixtureEnv.CONTROL_PLANE_URL}/api/health`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+      env: fixtureEnv,
+    },
+    {
+      command: 'pnpm --filter @matrix/mobile exec expo start --web --port 19006',
+      url: mobileWebUrl,
+      reuseExistingServer: false,
+      timeout: 120_000,
+      env: {
+        ...fixtureEnv,
+        CI: '1',
+        EXPO_PUBLIC_CONTROL_PLANE_URL: fixtureEnv.CONTROL_PLANE_URL,
+        EXPO_PUBLIC_PHASE_A_FIXTURE_MODE: '1',
+      },
+    },
+  ],
 });

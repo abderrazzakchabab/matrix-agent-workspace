@@ -11,10 +11,16 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { ControlPlaneApi, RoomBinding, RoomSummary } from '../api/control-plane';
+import type {
+  ControlPlaneApi,
+  RoomBinding,
+  RoomSummary,
+  WorkspaceSelection,
+} from '../api/control-plane';
 
 interface RoomBindingScreenProps {
-  controlPlane: Pick<ControlPlaneApi, 'getRooms' | 'bindRoom'>;
+  controlPlane: Pick<ControlPlaneApi, 'getRooms' | 'bindRoom'>
+    & Partial<Pick<ControlPlaneApi, 'createWorkspace'>>;
   onBound(binding: RoomBinding): void;
 }
 
@@ -26,7 +32,10 @@ export function RoomBindingScreen({ controlPlane, onBound }: RoomBindingScreenPr
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState('');
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceSelection | null>(null);
   const [loadingRooms, setLoadingRooms] = useState(true);
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [binding, setBinding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canBind = selectedRoomId !== null && workspaceId.trim().length > 0 && !binding;
@@ -46,6 +55,21 @@ export function RoomBindingScreen({ controlPlane, onBound }: RoomBindingScreenPr
   useEffect(() => {
     void loadRooms();
   }, [loadRooms]);
+
+  async function createAndSelectWorkspace() {
+    if (!controlPlane.createWorkspace || !workspaceName.trim() || creatingWorkspace) return;
+    setCreatingWorkspace(true);
+    setError(null);
+    try {
+      const workspace = await controlPlane.createWorkspace(workspaceName.trim());
+      setSelectedWorkspace(workspace);
+      setWorkspaceId(workspace.workspaceId);
+    } catch (cause) {
+      setError(errorMessage(cause, 'Unable to create a workspace. Retry when the control plane is available.'));
+    } finally {
+      setCreatingWorkspace(false);
+    }
+  }
 
   async function submitBinding() {
     if (!canBind || !selectedRoomId) return;
@@ -124,6 +148,49 @@ export function RoomBindingScreen({ controlPlane, onBound }: RoomBindingScreenPr
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Workspace</Text>
+            {controlPlane.createWorkspace ? (
+              <>
+                <Text style={styles.label}>Workspace name</Text>
+                <TextInput
+                  accessibilityLabel="Workspace name"
+                  autoCapitalize="words"
+                  placeholder="My workspace"
+                  style={styles.input}
+                  value={workspaceName}
+                  onChangeText={setWorkspaceName}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Create and select workspace"
+                  accessibilityState={{
+                    disabled: !workspaceName.trim() || creatingWorkspace,
+                    busy: creatingWorkspace,
+                  }}
+                  disabled={!workspaceName.trim() || creatingWorkspace}
+                  onPress={createAndSelectWorkspace}
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    (!workspaceName.trim() || creatingWorkspace) && styles.disabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  {creatingWorkspace
+                    ? <ActivityIndicator color="#225c45" />
+                    : <Text style={styles.secondaryText}>Create and select workspace</Text>}
+                </Pressable>
+                {selectedWorkspace ? (
+                  <View
+                    role="status"
+                    accessibilityLabel={`Selected workspace ${selectedWorkspace.name}, ${selectedWorkspace.workspaceId}`}
+                    style={styles.workspaceCard}
+                  >
+                    <Text style={styles.selectedWorkspaceLabel}>Selected workspace</Text>
+                    <Text style={styles.choiceTitle}>{selectedWorkspace.name}</Text>
+                    <Text style={styles.roomId}>{selectedWorkspace.workspaceId}</Text>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
             <Text style={styles.label}>Workspace ID</Text>
             <TextInput
               accessibilityLabel="Workspace ID"
@@ -132,7 +199,10 @@ export function RoomBindingScreen({ controlPlane, onBound }: RoomBindingScreenPr
               placeholder="ws_…"
               style={styles.input}
               value={workspaceId}
-              onChangeText={setWorkspaceId}
+              onChangeText={(value) => {
+                setWorkspaceId(value);
+                if (value !== selectedWorkspace?.workspaceId) setSelectedWorkspace(null);
+              }}
             />
           </View>
 
@@ -188,6 +258,10 @@ const styles = StyleSheet.create({
   errorPanel: { backgroundColor: '#fff1f0', borderRadius: 10, gap: 8, padding: 12 },
   error: { color: '#a12c2c', fontSize: 14, lineHeight: 20 },
   retry: { color: '#225c45', fontSize: 14, fontWeight: '700' },
+  workspaceCard: { backgroundColor: '#eef6f1', borderColor: '#bdd2c7', borderRadius: 10, borderWidth: 1, gap: 3, padding: 12 },
+  selectedWorkspaceLabel: { color: '#425b50', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  secondaryButton: { alignItems: 'center', borderColor: '#225c45', borderRadius: 10, borderWidth: 1, justifyContent: 'center', minHeight: 46, paddingHorizontal: 16 },
+  secondaryText: { color: '#225c45', fontSize: 14, fontWeight: '700' },
   primaryButton: { alignItems: 'center', backgroundColor: '#225c45', borderRadius: 10, justifyContent: 'center', minHeight: 50, paddingHorizontal: 18 },
   primaryText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
   disabled: { opacity: 0.42 },

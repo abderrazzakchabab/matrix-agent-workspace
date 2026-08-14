@@ -18,6 +18,14 @@ export interface RoomBinding {
   workspaceId: string;
 }
 
+export interface WorkspaceSelection {
+  workspaceId: string;
+  name: string;
+  ownerId: string;
+  status: string;
+  createdAt: string;
+}
+
 export interface FetchResponse {
   ok: boolean;
   status: number;
@@ -31,6 +39,7 @@ export type FetchImplementation = (
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    credentials?: 'include';
   },
 ) => Promise<FetchResponse>;
 
@@ -59,6 +68,7 @@ export interface RunMatrixDeliveriesResponse {
 
 export interface ControlPlaneApi {
   createMatrixSession(homeserverUrl: string, accessToken: string): Promise<MatrixSessionResponse>;
+  createWorkspace(name: string): Promise<WorkspaceSelection>;
   getRooms(): Promise<RoomSummary[]>;
   bindRoom(roomId: string, workspaceId: string): Promise<RoomBinding>;
   launchRun(
@@ -115,6 +125,8 @@ export function createControlPlaneClient(options: {
   sessionStore: SessionStore;
   fetch?: FetchImplementation;
   onUnauthorized?(): void;
+  /** Uses the browser's HttpOnly cookie jar; enabled only by the Phase A web fixture. */
+  browserCookieSession?: boolean;
 }): ControlPlaneApi {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   const fetchImpl = options.fetch ?? (globalThis.fetch as unknown as FetchImplementation);
@@ -134,9 +146,10 @@ export function createControlPlaneClient(options: {
     }
     const response = await fetchImpl(`${baseUrl}${path}`, {
       method: init?.method ?? 'GET',
+      credentials: options.browserCookieSession ? 'include' : undefined,
       headers: {
         Accept: 'application/json',
-        Cookie: session.cookie,
+        ...(options.browserCookieSession ? {} : { Cookie: session.cookie }),
         ...(init?.body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       body: init?.body === undefined ? undefined : JSON.stringify(init.body),
@@ -149,11 +162,14 @@ export function createControlPlaneClient(options: {
     async createMatrixSession(homeserverUrl, accessToken) {
       const response = await fetchImpl(`${baseUrl}/api/auth/matrix/session`, {
         method: 'POST',
+        credentials: options.browserCookieSession ? 'include' : undefined,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ homeserverUrl, accessToken }),
       });
       const body = await readResponse<MatrixSessionResponse>(response);
-      const cookie = sessionCookieFrom(response.headers);
+      const cookie = options.browserCookieSession
+        ? 'browser-managed-http-only-session'
+        : sessionCookieFrom(response.headers);
       if (!cookie) {
         throw new ControlPlaneError(
           'The control plane did not return a session reference',
@@ -163,6 +179,20 @@ export function createControlPlaneClient(options: {
       }
       await options.sessionStore.save({ cookie });
       return body;
+    },
+
+    async createWorkspace(name) {
+      return authenticatedRequest<WorkspaceSelection>('/api/workspaces', {
+        method: 'POST',
+        body: {
+          name: name.trim(),
+          policy: {
+            readOnly: true,
+            failurePolicy: 'partial',
+            promptInjectionMode: 'fail_run',
+          },
+        },
+      });
     },
 
     async getRooms() {

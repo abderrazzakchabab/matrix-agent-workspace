@@ -187,7 +187,7 @@ export async function POST(
       failurePolicy,
       runTimeoutMs: DEFAULT_RUN_TIMEOUT_MS,
       retry: DEFAULT_RETRY_POLICY,
-      githubContext: body.githubContext ?? undefined,
+      ...(body.githubContext === undefined ? {} : { githubContext: body.githubContext }),
     };
 
     const runId = `run_${randomUUID()}`;

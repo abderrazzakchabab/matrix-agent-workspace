@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createControlPlaneClient, type RoomBinding } from '../api/control-plane';
 import { createRunEventClient } from '../api/run-events';
-import { sessionStore } from '../auth/session-store';
+import { sessionStore, type SessionStore } from '../auth/session-store';
 import { createMatrixClient } from '../matrix/client';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RoomBindingScreen } from '../screens/RoomBindingScreen';
@@ -40,6 +40,24 @@ interface RootNavigatorProps {
   controlPlaneBaseUrl?: string;
 }
 
+const phaseAMobileFixture = Platform.OS === 'web'
+  && process.env.EXPO_PUBLIC_PHASE_A_FIXTURE_MODE === '1';
+
+function createBrowserFixtureSessionStore(): SessionStore {
+  let browserCookiePresent = false;
+  return {
+    async load() {
+      return browserCookiePresent ? { cookie: 'browser-managed-http-only-session' } : null;
+    },
+    async save() {
+      browserCookiePresent = true;
+    },
+    async clear() {
+      browserCookiePresent = false;
+    },
+  };
+}
+
 export function RootNavigator({
   controlPlaneBaseUrl = process.env.EXPO_PUBLIC_CONTROL_PLANE_URL ?? 'http://localhost:3000',
 }: RootNavigatorProps) {
@@ -48,6 +66,10 @@ export function RootNavigator({
   const [boundRoom, setBoundRoom] = useState<RoomBinding | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const runStore = useMemo(() => createRunStore(), []);
+  const activeSessionStore = useMemo(
+    () => phaseAMobileFixture ? createBrowserFixtureSessionStore() : sessionStore,
+    [],
+  );
   const handleUnauthorized = useCallback(() => {
     setActiveRun(null);
     setBoundRoom(null);
@@ -56,25 +78,41 @@ export function RootNavigator({
   const controlPlane = useMemo(
     () => createControlPlaneClient({
       baseUrl: controlPlaneBaseUrl,
-      sessionStore,
+      sessionStore: activeSessionStore,
       onUnauthorized: handleUnauthorized,
+      browserCookieSession: phaseAMobileFixture,
     }),
-    [controlPlaneBaseUrl, handleUnauthorized],
+    [activeSessionStore, controlPlaneBaseUrl, handleUnauthorized],
   );
   const eventClient = useMemo(
     () => createRunEventClient({
       baseUrl: controlPlaneBaseUrl,
-      sessionStore,
+      sessionStore: activeSessionStore,
       store: runStore,
       onUnauthorized: handleUnauthorized,
+      browserCookieSession: phaseAMobileFixture,
+      enableTestControls: phaseAMobileFixture,
     }),
-    [controlPlaneBaseUrl, handleUnauthorized, runStore],
+    [activeSessionStore, controlPlaneBaseUrl, handleUnauthorized, runStore],
   );
   const matrixClient = useMemo(() => createMatrixClient(controlPlane), [controlPlane]);
 
   useEffect(() => {
+    if (!phaseAMobileFixture) return undefined;
+    const target = globalThis as typeof globalThis & {
+      __phaseAMobileTest?: { forceSseDisconnect(): number | null };
+    };
+    target.__phaseAMobileTest = {
+      forceSseDisconnect: () => eventClient.forceReconnectForTest?.() ?? null,
+    };
+    return () => {
+      delete target.__phaseAMobileTest;
+    };
+  }, [eventClient]);
+
+  useEffect(() => {
     let active = true;
-    sessionStore
+    activeSessionStore
       .load()
       .then((session) => {
         if (active) setHasSession(session !== null);
@@ -88,7 +126,7 @@ export function RootNavigator({
     return () => {
       active = false;
     };
-  }, []);
+  }, [activeSessionStore]);
 
   if (restoring) {
     return (
@@ -155,7 +193,7 @@ export function RootNavigator({
         ) : null}
         {hasSession ? (
           <Stack.Screen name="Run" options={{ title: 'Run progress' }}>
-            {() => activeRun ? (
+            {({ navigation }) => activeRun ? (
               <RunScreen
                 runId={activeRun.runId}
                 mode={activeRun.mode}
@@ -164,6 +202,7 @@ export function RootNavigator({
                 store={runStore}
                 eventClient={eventClient}
                 controlPlane={controlPlane}
+                onStartAnotherRun={() => navigation.goBack()}
               />
             ) : null}
           </Stack.Screen>

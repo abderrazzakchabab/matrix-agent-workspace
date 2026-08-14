@@ -106,6 +106,7 @@ export async function GET(
       userId: auth.userId,
       workspaceId: run.workspace_id as string,
     };
+    let cancelled = false;
     const stream = new ReadableStream({
       start(controller) {
         void (async () => {
@@ -117,14 +118,20 @@ export async function GET(
               now: () => Date.now(),
               sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
             })) {
+              if (cancelled) break;
               controller.enqueue(new TextEncoder().encode(frame));
             }
-            controller.close();
+            if (!cancelled) controller.close();
           } catch (error) {
-            console.error('[control-plane] sse stream error', error);
-            controller.error(error);
+            if (!cancelled) {
+              console.error('[control-plane] sse stream error', error);
+              controller.error(error);
+            }
           }
         })();
+      },
+      cancel() {
+        cancelled = true;
       },
     });
 
