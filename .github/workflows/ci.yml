@@ -87,7 +87,10 @@ jobs:
             -H 'authorization: Bearer ghs_fixture_write_token' \
             -H 'content-type: application/json' \
             -d '{"title":"ci write probe"}')
-          echo "$response" | grep -q '"number": 42'
+          # Match the issue number without assuming JSON spacing: the fixture
+          # serializes with JSON.stringify ("number":42), and the boundary
+          # anchor keeps the match from bleeding into a longer number.
+          echo "$response" | grep -qE '"number":[[:space:]]*42[,}]'
           curl -fsS http://127.0.0.1:4020/__fixture/state | grep -q 'mutationRequests'
 
       - name: Run Task 11 GitHub write-control tests
