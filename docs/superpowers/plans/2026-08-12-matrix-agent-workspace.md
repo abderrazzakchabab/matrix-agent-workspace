@@ -15,7 +15,7 @@
 Implementation MUST follow the phase names and order below even though the alphabetical order is different:
 
 1. **Phase B — backend first:** the Next.js control plane, durable workflow, persistence, authentication, explicit room binding, Matrix delivery, SSE replay, configurable specialists, both run modes, and read-only GitHub access. Phase B MUST NOT add GitHub mutations, mutation scopes, approval flows, audit UI, or the GitHub collaboration workspace UI.
-2. **Phase A — mobile client second:** the React Native/Expo Matrix client for login, room binding, run launch, live/replayed events, and Matrix-oriented progress/result views. It consumes Phase B contracts and does not grow backend behavior.
+2. **Phase A — mobile client second:** the React Native/Expo Matrix client for login, room binding, run launch, live/replayed events, and Matrix-oriented progress/result views. It consumes Phase B contracts and may expose existing read-only delivery state needed by the client, but does not add workflow, Matrix delivery, or GitHub behavior.
 3. **Phase C — GitHub collaboration workspace third:** separate write authorization, explicit confirmation/approval, audit records, idempotent mutation commands, mutation tests, and only then the collaboration workspace UI.
 
 Each phase ends with an independently runnable test suite and an end-to-end acceptance gate. Do not reorder these phases or implement UI-first slices that require unbuilt backend behavior.
@@ -56,7 +56,7 @@ All JSON responses include `requestId`; all errors use `{ "error": { "code": str
   - Request: `{ "roomId": "!room:example.test", "prompt": "Summarize the open issues", "mode": "parallel", "specialistIds": ["repo-reader", "issue-reader"], "githubContext": { "repository": "acme/widget" } }`
   - `202`: `{ "runId": "run_123", "status": "queued", "roomId": "!room:example.test", "nextSequence": 1 }`
   - `409 ROOM_NOT_BOUND`, `422 INVALID_SPECIALIST_CONFIGURATION`, or `403 WORKSPACE_ACCESS_DENIED` as applicable.
-- `GET /api/runs/:runId` returns status, mode, bound room, specialist statuses, `lastSequence`, `cancelRequestedAt`, and terminal summary only to the owning user or an explicitly authorized workspace member.
+- `GET /api/runs/:runId` returns status, mode, bound room, specialist statuses, `lastSequence`, Matrix delivery entries (`sequence` and `pending|delivered|failed|dead` status), `cancelRequestedAt`, and terminal summary only to the owning user or an explicitly authorized workspace member.
 - `POST /api/runs/:runId/cancel` returns `202 { "runId": string, "status": "cancellation_requested" }`; cancellation is cooperative and the terminal event is `run.cancelled`.
 - `GET /api/runs/:runId/events?after=17` uses `text/event-stream`; each frame is `id:<sequence>`, `event:<type>`, `data:<Event JSON>`. It first replays events with sequence greater than `after`, then follows the outbox. `Last-Event-ID` is equivalent to `after`. A missing/unauthorized run returns `404` without revealing whether it exists.
 - `GET /api/github/repositories?installationId=inst_123`, `GET /api/github/repositories/:owner/:repo/issues`, and `GET /api/github/repositories/:owner/:repo/pulls` are Phase B read-only endpoints. They accept cursor pagination and return normalized repository/issue/PR objects plus `nextCursor`; no route under `/api/github` accepts a mutation verb in Phase B.
@@ -288,7 +288,7 @@ The following tasks are the first implementation stream. They are intentionally 
 
 # Phase A — Mobile client second
 
-Only begin after the Phase B commit and end-to-end gate are green. The client uses the Phase B HTTP/SSE and Matrix contracts; it must not add GitHub writes or a collaboration workspace.
+Only begin after the Phase B commit and end-to-end gate are green. Follow the Phase A boundary above; do not add GitHub writes or a collaboration workspace.
 
 ### Task 8: Expo Matrix session, room binding, and run launch client
 
@@ -327,7 +327,7 @@ Only begin after the Phase B commit and end-to-end gate are green. The client us
   ```
 - [ ] **Step 2: Run red.** Run `pnpm vitest run apps/mobile/test/api/run-events-reconnect.test.ts apps/mobile/test/components/run-timeline.test.tsx apps/mobile/test/screens/run-screen.e2e.test.tsx`. Expected: FAIL with `Cannot find module .../api/run-events`.
 - [ ] **Step 3: Implement minimally.** Parse SSE `id/event/data`, persist the highest sequence per run, reconnect with `Last-Event-ID`, discard lower/equal sequences, and map the versioned event schema to accessible timeline states. Keep Matrix messages and SSE events correlated by `runId`/sequence without adding a second delivery path.
-- [ ] **Step 4: Verify green.** Run the focused mobile tests; expected: all pass with one rendered row for each event sequence. Run `pnpm exec expo start --no-dev --minify` against the fixture API and `pnpm exec playwright test apps/mobile/test/screens/run-screen.e2e.test.tsx`; expected: login-to-terminal flow passes for both modes.
+- [ ] **Step 4: Verify green.** Run the focused mobile tests; expected: all pass with one rendered row for each event sequence. Run Expo Doctor and an Expo web export/start smoke against the fixture API. `apps/mobile/test/screens/run-screen.e2e.test.tsx` is a Vitest React Native component flow; Playwright intentionally matches only `*.spec.ts`. Browser-level login-to-terminal acceptance remains Task 10 and must not be wired into this task.
 - [ ] **Step 5: Commit.** Run `git add apps/mobile/src apps/mobile/test && git commit -m "feat: show replayable Matrix run progress on mobile"`.
 
 ### Task 10: Phase A mobile end-to-end gate
