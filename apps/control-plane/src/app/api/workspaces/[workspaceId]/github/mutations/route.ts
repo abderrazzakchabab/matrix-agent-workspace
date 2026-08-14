@@ -107,6 +107,29 @@ export async function POST(
       await assertWorkspaceAccess(client, workspaceId);
     });
 
+    // The run must exist in the caller's workspace (RLS-enforced); an
+    // inaccessible or missing run looks identical.
+    if (body.runId) {
+      const runWorkspaceId = await withTenant(auth.userId, async (client) => {
+        const { rows } = await client.query('SELECT workspace_id FROM runs WHERE id = $1', [
+          body.runId,
+        ]);
+        if (rows.length === 0) {
+          throw Object.assign(new Error('Run not found'), {
+            code: 'RUN_NOT_FOUND',
+            status: 404,
+          });
+        }
+        return rows[0].workspace_id as string;
+      });
+      if (runWorkspaceId !== workspaceId) {
+        throw Object.assign(new Error('Run not found'), {
+          code: 'RUN_NOT_FOUND',
+          status: 404,
+        });
+      }
+    }
+
     const result = await enqueueMutationCommand(
       {
         userId: auth.userId,

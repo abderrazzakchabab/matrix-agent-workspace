@@ -165,6 +165,11 @@ export interface MutationCommandStore {
     arguments: Record<string, unknown>;
   }): Promise<InsertCommandResult>;
   getCommand(commandId: string): Promise<MutationCommand | null>;
+  findCommandByKey(input: {
+    userId?: string;
+    workspaceId: string;
+    idempotencyKey: string;
+  }): Promise<MutationCommand | null>;
   persistProviderResult(
     commandId: string,
     providerResult: Record<string, unknown>,
@@ -232,6 +237,14 @@ export class InMemoryMutationCommandStore implements MutationCommandStore {
 
   async getCommand(commandId: string): Promise<MutationCommand | null> {
     return this.rows.get(commandId) ?? null;
+  }
+
+  async findCommandByKey(input: {
+    userId?: string;
+    workspaceId: string;
+    idempotencyKey: string;
+  }): Promise<MutationCommand | null> {
+    return this.findByKey(input.workspaceId, input.idempotencyKey) ?? null;
   }
 
   async persistProviderResult(
@@ -365,6 +378,24 @@ const databaseMutationCommandStoreBase = {
         [input.workspaceId, input.idempotencyKey],
       );
       return { command: mapCommandRow(existing.rows[0] as Record<string, unknown>), replayed: true };
+    });
+  },
+
+  async findCommandByKey(input: {
+    userId?: string;
+    workspaceId: string;
+    idempotencyKey: string;
+  }): Promise<MutationCommand | null> {
+    if (!input.userId) throw new Error('databaseMutationCommandStore.findCommandByKey requires userId');
+    return withTenant(input.userId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT * FROM ${GITHUB_MUTATION_COMMANDS.table}
+          WHERE ${GITHUB_MUTATION_COMMANDS.workspaceId} = $1
+            AND ${GITHUB_MUTATION_COMMANDS.idempotencyKey} = $2
+          LIMIT 1`,
+        [input.workspaceId, input.idempotencyKey],
+      );
+      return rows[0] ? mapCommandRow(rows[0] as Record<string, unknown>) : null;
     });
   },
 };
@@ -795,11 +826,14 @@ export interface EnqueueMutationResult {
 }
 
 /**
- * Enqueue a mutation command after checking, in order: repository shape,
- * operation/arguments, the repository+scope write grant, and the exact
- * unexpired approval. Duplicate idempotency keys return the existing command
- * and never re-run the worker. Audit rows record queueing, completion,
- * failure, and denials — always with redacted payloads.
+ * Enqueue a mutation command. A duplicate idempotency key returns the
+ * existing command/result immediately — even after the approval TTL or grant
+ * revocation — because the command was already gated at first enqueue and the
+ * worker re-checks both gates right before the provider call. For new
+ * commands the repository shape, operation/arguments, the repository+scope
+ * write grant, and the exact unexpired approval are checked in order before
+ * anything is inserted. Audit rows record queueing, completion, failure, and
+ * denials — always with redacted payloads.
  */
 export async function enqueueMutationCommand(
   input: EnqueueMutationInput,
@@ -809,6 +843,13 @@ export async function enqueueMutationCommand(
   const validated = validateMutationCommand({ operation: input.operation, arguments: input.arguments });
   const scope = scopeForOperation(validated.operation);
   const commandHash = computeCommandHash(validated.operation, validated.arguments);
+
+  const existing = await deps.commandStore.findCommandByKey({
+    userId: input.userId,
+    workspaceId: input.workspaceId,
+    idempotencyKey: input.idempotencyKey,
+  });
+  if (existing) return { command: existing, replayed: true };
 
   try {
     await authorizeWriteScope(
