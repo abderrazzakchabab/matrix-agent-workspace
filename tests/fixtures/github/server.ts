@@ -30,6 +30,7 @@ const fixturePath = new URL('./wiremock.json', import.meta.url);
 const fixture = JSON.parse(await readFile(fixturePath, 'utf8')) as { mappings: Mapping[] };
 let requests: RecordedRequest[] = [];
 let mutationRequests: RecordedRequest[] = [];
+let mutationBodies: Array<RecordedRequest & { body: unknown }> = [];
 
 function json(response: import('node:http').ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { 'content-type': 'application/json' });
@@ -42,7 +43,7 @@ function authorizationClass(header: string | undefined): AuthorizationClass {
   if (!match) return 'invalid';
   const token = match[1]!;
   if (token === OAUTH_TOKEN) return 'oauth';
-  if (token === INSTALLATION_TOKEN) return 'installation';
+  if (token === INSTALLATION_TOKEN || token.startsWith('ghs_')) return 'installation';
   if (/^[^.]+\.[^.]+\.[^.]+$/.test(token)) return 'app';
   return 'invalid';
 }
@@ -56,6 +57,18 @@ function record(
   requests.push(item);
   if (method !== 'GET' && (path.startsWith('/repos/') || path === '/graphql')) {
     mutationRequests.push(item);
+  }
+}
+
+async function readBody(request: import('node:http').IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(chunk as Buffer);
+  if (chunks.length === 0) return null;
+  const raw = Buffer.concat(chunks).toString('utf8');
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
   }
 }
 
@@ -78,18 +91,28 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (method === 'GET' && url.pathname === '/__fixture/state') {
-    json(response, 200, { requests, mutationRequests });
+    json(response, 200, { requests, mutationRequests, mutationBodies });
     return;
   }
   if (method === 'POST' && url.pathname === '/__fixture/reset') {
     requests = [];
     mutationRequests = [];
+    mutationBodies = [];
     json(response, 200, { reset: true });
     return;
   }
 
   const requestAuthorizationClass = authorizationClass(request.headers.authorization);
   record(method, url.pathname, requestAuthorizationClass);
+
+  if (method !== 'GET' && (url.pathname.startsWith('/repos/') || url.pathname === '/graphql')) {
+    mutationBodies.push({
+      method,
+      path: url.pathname,
+      authorizationClass: requestAuthorizationClass,
+      body: await readBody(request),
+    });
+  }
 
   if (method === 'POST' && url.pathname === '/login/oauth/access_token') {
     json(response, 200, {

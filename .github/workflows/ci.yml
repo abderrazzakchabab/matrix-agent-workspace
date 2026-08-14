@@ -49,3 +49,50 @@ jobs:
       - name: Verify vector extension exists
         run: |
           docker compose -f infra/docker-compose.test.yml exec -T postgres psql -U matrix -d matrix_test -c "SELECT extname FROM pg_extension WHERE extname = 'vector';"
+
+  github-write-fixture:
+    name: GitHub write controls fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Start the GitHub fixture with write routes
+        run: docker compose -f infra/docker-compose.test.yml up -d github
+
+      - name: Wait for the GitHub fixture
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4020/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "GitHub fixture did not become ready in time"
+          exit 1
+
+      - name: Prove the mutation write route is enabled and recorded
+        run: |
+          response=$(curl -fsS -X POST http://127.0.0.1:4020/repos/acme/widget/issues \
+            -H 'authorization: Bearer ghs_fixture_write_token' \
+            -H 'content-type: application/json' \
+            -d '{"title":"ci write probe"}')
+          echo "$response" | grep -q '"number": 42'
+          curl -fsS http://127.0.0.1:4020/__fixture/state | grep -q 'mutationRequests'
+
+      - name: Run Task 11 GitHub write-control tests
+        run: |
+          pnpm vitest run apps/control-plane/test/github/write-authorization.test.ts \
+            apps/control-plane/test/github/approval-gate.test.ts \
+            apps/control-plane/test/github/mutation-idempotency.test.ts \
+            apps/control-plane/test/github/audit-record.test.ts
