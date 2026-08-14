@@ -16,6 +16,7 @@ interface RunScreenProps {
   eventClient: RunEventClient;
   controlPlane: Pick<ControlPlaneApi, 'cancelRun' | 'getRunMatrixDeliveries'>;
   matrixDeliveryMarkers?: readonly MatrixDeliveryMarker[];
+  onStartAnotherRun?(): void;
 }
 
 type CancellationState = 'idle' | 'pending' | 'requested' | 'terminal_pending' | 'error';
@@ -31,6 +32,7 @@ export function RunScreen({
   eventClient,
   controlPlane,
   matrixDeliveryMarkers = [],
+  onStartAnotherRun,
 }: RunScreenProps) {
   const subscribe = useCallback((listener: () => void) => store.subscribe(runId, listener), [runId, store]);
   const getSnapshot = useCallback(() => store.get(runId), [runId, store]);
@@ -134,6 +136,17 @@ export function RunScreen({
           </Text>
         ) : null}
 
+        {terminal && onStartAnotherRun ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Start another run"
+            onPress={onStartAnotherRun}
+            style={({ pressed }) => [styles.anotherButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.anotherText}>Start another run</Text>
+          </Pressable>
+        ) : null}
+
         {!terminal ? (
           <Pressable
             accessibilityRole="button"
@@ -163,6 +176,8 @@ const styles = StyleSheet.create({
   description: { color: '#58615d', fontSize: 15, lineHeight: 22, marginTop: 3 },
   requested: { backgroundColor: '#fff7df', borderRadius: 10, color: '#725016', fontSize: 14, fontWeight: '700', padding: 12 },
   error: { backgroundColor: '#fff1f0', borderRadius: 10, color: '#a12c2c', fontSize: 14, lineHeight: 20, padding: 12 },
+  anotherButton: { alignItems: 'center', backgroundColor: '#225c45', borderRadius: 10, justifyContent: 'center', minHeight: 48, paddingHorizontal: 18 },
+  anotherText: { color: '#ffffff', fontSize: 15, fontWeight: '800' },
   cancelButton: { alignItems: 'center', borderColor: '#b95b5b', borderRadius: 10, borderWidth: 1, justifyContent: 'center', minHeight: 48, paddingHorizontal: 18 },
   cancelText: { color: '#8a2525', fontSize: 15, fontWeight: '800' },
   disabled: { opacity: 0.45 },

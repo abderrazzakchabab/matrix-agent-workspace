@@ -30,6 +30,8 @@ export interface RunEventConnection {
 
 export interface RunEventClient {
   connect(runId: string): RunEventConnection;
+  /** Present only in the Phase A fixture bundle. */
+  forceReconnectForTest?(): number | null;
 }
 
 interface SseFrame {
@@ -105,6 +107,8 @@ export function createRunEventClient(options: {
   random?: () => number;
   schedule?: (callback: () => void, delayMs: number) => unknown;
   cancelSchedule?: (handle: unknown) => void;
+  browserCookieSession?: boolean;
+  enableTestControls?: boolean;
 }): RunEventClient {
   const baseUrl = normalizedBaseUrl(options.baseUrl);
   const fetchImpl = options.fetch ?? (expoFetch as unknown as RunEventsFetch);
@@ -113,6 +117,7 @@ export function createRunEventClient(options: {
   const maxDelayMs = Math.max(baseDelayMs, options.maxDelayMs ?? 8_000);
   const schedule = options.schedule ?? ((callback, delayMs) => setTimeout(callback, delayMs));
   const cancelSchedule = options.cancelSchedule ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+  let activeTestDisconnect: (() => number | null) | undefined;
 
   return {
     connect(runId) {
@@ -135,6 +140,17 @@ export function createRunEventClient(options: {
           if (!disposed) void open();
         }, delay);
       }
+
+      function forceReconnectForTest(): number | null {
+        if (!options.enableTestControls || disposed || terminalReceived) return null;
+        const savedSequence = options.store.get(runId).highestSequence;
+        abortController?.abort();
+        abortController = null;
+        queueReconnect();
+        return savedSequence;
+      }
+
+      if (options.enableTestControls) activeTestDisconnect = forceReconnectForTest;
 
       function consumeFrame(rawFrame: string): void {
         if (terminalReceived || disposed) return;
@@ -181,7 +197,7 @@ export function createRunEventClient(options: {
             credentials: 'include',
             headers: {
               Accept: 'text/event-stream',
-              Cookie: session.cookie,
+              ...(options.browserCookieSession ? {} : { Cookie: session.cookie }),
               ...(after > 0 ? { 'Last-Event-ID': String(after) } : {}),
             },
             signal: abortController.signal,
@@ -230,8 +246,14 @@ export function createRunEventClient(options: {
             cancelSchedule(reconnectHandle);
             reconnectHandle = undefined;
           }
+          if (activeTestDisconnect === forceReconnectForTest) {
+            activeTestDisconnect = undefined;
+          }
         },
       };
     },
+    forceReconnectForTest: options.enableTestControls
+      ? () => activeTestDisconnect?.() ?? null
+      : undefined,
   };
 }

@@ -12,7 +12,7 @@ The implementation plan is at `docs/superpowers/plans/2026-08-12-matrix-agent-wo
 
 ## Mobile client
 
-The Expo client supports Matrix login, explicit room-to-workspace binding, and launching and monitoring parallel or sequential specialist runs. The run screen replays durable progress, supports cancellation through the terminal event, renders completed, partial, failed, and cancelled results, and confirms delivery to Matrix without duplicating the result. The client stores only the opaque control-plane session reference in the platform secure store; the Matrix access token is used only during login.
+The Expo client supports Matrix login, workspace creation, explicit room-to-workspace binding, and launching and monitoring parallel or sequential specialist runs. The run screen replays durable progress, supports cancellation through the terminal event, renders completed, partial, failed, and cancelled results, and confirms delivery to Matrix without duplicating the result. The client stores only the opaque control-plane session reference in the platform secure store; the Matrix access token is used only during login.
 
 From the repository root, start the control plane and Expo in separate terminals:
 
@@ -26,15 +26,16 @@ EXPO_PUBLIC_CONTROL_PLANE_URL=http://localhost:3000 pnpm --filter @matrix/mobile
 
 For a physical device, replace `localhost` with a control-plane URL reachable from that device.
 
-## Phase B backend gate
+## Phase gates
 
-The deterministic backend acceptance stack requires Docker and exposes PostgreSQL/pgvector, Synapse, model-provider, GitHub, and Inngest fixtures. Playwright starts the Next.js control plane for the gate.
+The deterministic acceptance stack requires Docker and exposes PostgreSQL/pgvector, Synapse, model-provider, GitHub, and Inngest fixtures. Playwright starts the Next.js control plane for the Phase B gate, and the control plane plus the Expo web build for the Phase A mobile gate.
 
 ```sh
 pnpm test:fixtures:up      # start fixtures and seed alice/bob plus #alice:example.test
 pnpm test:fixtures:health  # verify every fixture is healthy
 pnpm test:phase-b          # start fixtures and run the Phase B Playwright/API gate
+pnpm exec playwright test apps/mobile/test/e2e/phase-a-mobile.spec.ts   # Phase A mobile gate (fixtures must be up)
 pnpm test:fixtures:down    # stop and remove fixture containers
 ```
 
-The seeded Matrix passwords are `alice_secret` and `bob_secret`. The fixture stack is deterministic and test-only; `test:phase-b` leaves it running for inspection, so use `test:fixtures:down` when finished.
+The seeded Matrix passwords are `alice_secret` and `bob_secret`. The fixture stack is deterministic and test-only; the gates leave it running for inspection, so use `test:fixtures:down` when finished.
