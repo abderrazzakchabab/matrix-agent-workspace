@@ -6,13 +6,20 @@
  */
 import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSession, toErrorResponse, withTenant, assertWorkspaceAccess } from '../../../../../auth/authorization';
 import {
-  requireSession,
-  toErrorResponse,
-  withTenant,
-  assertWorkspaceAccess,
-} from '../../../../../auth/authorization';
-import { databaseAuditStore } from '../../../../../github/mutation-command';
+  databaseAuditStore,
+  decodeAuditCursor,
+} from '../../../../../github/mutation-command';
+
+class AuditQueryValidationError extends Error {
+  readonly code = 'VALIDATION_ERROR';
+  readonly status = 400;
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuditQueryValidationError';
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -29,7 +36,17 @@ export async function GET(
 
     const cursor = request.nextUrl.searchParams.get('cursor') ?? undefined;
     const limitParam = request.nextUrl.searchParams.get('limit');
-    const limit = limitParam ? Number(limitParam) : undefined;
+    let limit: number | undefined;
+    if (limitParam !== null) {
+      const parsed = Number(limitParam);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new AuditQueryValidationError('Invalid audit limit');
+      }
+      limit = parsed;
+    }
+    if (cursor !== undefined) {
+      decodeAuditCursor(cursor);
+    }
 
     const page = await databaseAuditStore.list({
       userId: auth.userId,

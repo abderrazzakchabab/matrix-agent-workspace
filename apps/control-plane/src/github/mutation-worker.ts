@@ -15,7 +15,7 @@
  * never reach GitHub.
  */
 import { REDACTED } from '../security/redaction';
-import type { ApprovalService } from './approval-service';
+import { ApprovalNotFoundError, type ApprovalService } from './approval-service';
 import {
   scopeForOperation,
   type GithubMutationClient,
@@ -132,17 +132,16 @@ export function createMutationWorker(deps: MutationWorkerDeps): MutationWorker {
           },
           deps.grantStore,
         );
-        if (command.approvalId) {
-          await deps.approvalService.checkApproval({
-            approvalId: command.approvalId,
-            workspaceId: command.workspaceId,
-            runId: command.runId,
-            userId: command.userId,
-            scope,
-            commandHash: command.argumentsHash,
-            now: deps.now?.(),
-          });
-        }
+        if (!command.approvalId) throw new ApprovalNotFoundError();
+        await deps.approvalService.checkApproval({
+          approvalId: command.approvalId,
+          workspaceId: command.workspaceId,
+          runId: command.runId,
+          userId: command.userId,
+          scope,
+          commandHash: command.argumentsHash,
+          now: deps.now?.(),
+        });
       } catch (error) {
         const code = (error as { code?: string }).code ?? 'MUTATION_FAILED';
         await deps.commandStore.markFailed(commandId, code);

@@ -531,13 +531,24 @@ function mapAuditRow(row: Record<string, unknown>): AuditRecord {
   };
 }
 
-function encodeAuditCursor(createdAt: string, id: string): string {
+export class InvalidAuditCursorError extends Error {
+  readonly code = 'VALIDATION_ERROR';
+  readonly status = 400;
+  constructor() {
+    super('Invalid audit cursor');
+    this.name = 'InvalidAuditCursorError';
+  }
+}
+
+export function encodeAuditCursor(createdAt: string, id: string): string {
   return Buffer.from(`${createdAt}|${id}`).toString('base64url');
 }
 
-function decodeAuditCursor(cursor: string): { createdAt: string; id: string } {
+export function decodeAuditCursor(cursor: string): { createdAt: string; id: string } {
   const [createdAt, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
-  if (!createdAt || !id) throw new Error('Invalid audit cursor');
+  if (!createdAt || !id || Number.isNaN(Date.parse(createdAt))) {
+    throw new InvalidAuditCursorError();
+  }
   return { createdAt, id };
 }
 
@@ -586,7 +597,8 @@ export const databaseAuditStore: AuditStore = {
   async list({ userId, workspaceId, cursor, limit }) {
     if (!userId) throw new Error('databaseAuditStore.list requires userId');
     return withTenant(userId, async (client) => {
-      const pageSize = Math.min(Math.max(limit ?? 50, 1), 200);
+      const requested = Number.isFinite(limit) ? (limit as number) : 50;
+      const pageSize = Math.min(Math.max(requested, 1), 200);
       const params: unknown[] = [workspaceId];
       let where = `WHERE ${AUDIT_RECORDS.workspaceId} = $1`;
       if (cursor) {

@@ -284,6 +284,46 @@ describe('GitHub mutation approval gate', () => {
     expect(fixture.state().mutationRequests).toHaveLength(0);
   });
 
+  it('fails closed when the approval is gone before worker execution', async () => {
+    fixture.reset();
+    const { worker, commandStore, auditStore } = await setup(fixture, { worker: false });
+
+    // The migration's ON DELETE SET NULL/cascade can leave a queued command
+    // with a null approval id.
+    const inserted = await commandStore.insertCommand({
+      userId: 'user-a',
+      id: 'gcmd_missing_approval',
+      workspaceId: 'workspace-a',
+      runId: 'run-1',
+      idempotencyKey: 'missing_approval_key',
+      approvalId: null,
+      repository: 'acme/widget',
+      operation: 'create_issue',
+      argumentsHash: computeCommandHash('create_issue', DEFAULT_ARGS),
+      arguments: DEFAULT_ARGS,
+    });
+
+    await expect(worker.process(inserted.command.id)).rejects.toMatchObject({
+      code: 'APPROVAL_NOT_FOUND',
+      status: 409,
+    });
+    expect(fixture.state().mutationRequests).toHaveLength(0);
+
+    const failed = await commandStore.getCommand(inserted.command.id);
+    expect(failed?.status).toBe('failed');
+    expect(failed?.errorCode).toBe('APPROVAL_NOT_FOUND');
+
+    const audits = (await auditStore.list({ workspaceId: 'workspace-a' })).items;
+    expect(
+      audits.some(
+        (a) =>
+          a.outcome === 'denied' &&
+          a.commandId === inserted.command.id &&
+          a.details?.errorCode === 'APPROVAL_NOT_FOUND',
+      ),
+    ).toBe(true);
+  });
+
   it('re-checks the approval immediately before the provider call', async () => {
     const { deps, worker, approval, advanceClock } = await setup(fixture, { worker: false });
     const enqueued = await enqueueMutationCommand(command({ approvalId: approval.id }), deps);
