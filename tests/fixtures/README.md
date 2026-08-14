@@ -6,7 +6,7 @@ are not part of the application runtime.
 ## Structure
 
 - `model/` – deterministic AI provider mock (Phase B Task 7)
-- `github/` – WireMock stubs for read-only GitHub API (Phase B Task 6)
+- `github/` – GitHub API fixture: read stubs (Phase B Task 6) plus Phase C write routes for mutation tests
 - `synapse/` – Synapse homeserver seed script (Phase B Task 2)
 
 ## Usage
