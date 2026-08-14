@@ -628,11 +628,23 @@ test('Phase B backend contract is durable, replayable, Matrix-first, and GitHub 
       expect(mutation.status()).toBe(405);
     }
   }
+  // A well-formed mutation command from a read-only session is denied by the
+  // Phase C write gate (no grant) without ever calling GitHub.
   const absentMutationRoute = await request.post(
     `${CONTROL_PLANE_URL}/api/workspaces/${workspaceId}/github/mutations`,
-    { headers: { cookie }, data: { operation: 'create_issue' } },
+    {
+      headers: { cookie },
+      data: {
+        idempotencyKey: 'phase-b-write-probe',
+        approvalId: 'apr_probe',
+        repository: 'acme/widget',
+        operation: 'create_issue',
+        arguments: { title: 'must not be sent' },
+      },
+    },
   );
-  expect(absentMutationRoute.status()).toBe(404);
+  expect(absentMutationRoute.status()).toBe(403);
+  expect((await absentMutationRoute.json()).error.code).toBe('WRITE_SCOPE_REQUIRED');
   expect((await githubState()).mutationRequests).toHaveLength(0);
 
   // Durable terminal results remain available after every stream and delivery completes.

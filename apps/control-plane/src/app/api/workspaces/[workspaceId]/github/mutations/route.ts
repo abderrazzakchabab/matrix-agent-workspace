@@ -1,0 +1,136 @@
+/**
+ * `POST /api/workspaces/:workspaceId/github/mutations` — enqueue an
+ * approval-gated, idempotent GitHub mutation command.
+ *
+ * The write gate checks the repository+scope grant (`WRITE_SCOPE_REQUIRED`),
+ * the exact unexpired approval (`APPROVAL_*`), and the operation/arguments
+ * allowlist (`COMMAND_NOT_ALLOWED`) before anything is persisted. Commands
+ * are keyed by idempotency key: a duplicate enqueue returns the existing
+ * command. Octokit is only ever reached through the mutation worker after
+ * authorization passes.
+ */
+import { randomUUID } from 'node:crypto';
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { getPool } from '../../../../../../db/client';
+import {
+  requireSession,
+  toErrorResponse,
+  withTenant,
+  assertWorkspaceAccess,
+} from '../../../../../../auth/authorization';
+import {
+  createApprovalService,
+  databaseApprovalStore,
+} from '../../../../../../github/approval-service';
+import {
+  createDatabaseMutationCommandStore,
+  createGithubMutationClient,
+  databaseAuditStore,
+  enqueueMutationCommand,
+  type MutationCommandStore,
+} from '../../../../../../github/mutation-command';
+import { createMutationWorker, type MutationWorker } from '../../../../../../github/mutation-worker';
+import { databaseWriteGrantStore } from '../../../../../../github/write-authorization';
+
+const CreateMutationBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  approvalId: z.string().min(1).max(200),
+  repository: z.string().min(1).max(200),
+  runId: z.string().min(1).max(200).optional(),
+  operation: z.string().min(1).max(100),
+  arguments: z.unknown(),
+});
+
+/**
+ * Resolve a command's owning tenant via the security-definer helper
+ * (`mutation_command_tenant`, granted to the app role): the worker knows only
+ * a command id and must re-enter `withTenant` as the command owner.
+ */
+async function resolveMutationCommandTenant(commandId: string): Promise<{
+  userId: string;
+  workspaceId: string;
+} | null> {
+  const { rows } = await getPool().query(
+    'SELECT user_id, workspace_id FROM mutation_command_tenant($1)',
+    [commandId],
+  );
+  const row = rows[0] as { user_id?: unknown; workspace_id?: unknown } | undefined;
+  return row && row.user_id && row.workspace_id
+    ? { userId: String(row.user_id), workspaceId: String(row.workspace_id) }
+    : null;
+}
+
+const commandStore: MutationCommandStore = createDatabaseMutationCommandStore(
+  resolveMutationCommandTenant,
+);
+
+const approvalService = createApprovalService({ store: databaseApprovalStore });
+
+const worker: MutationWorker = createMutationWorker({
+  commandStore,
+  grantStore: databaseWriteGrantStore,
+  approvalService,
+  auditStore: databaseAuditStore,
+  // The production deployment supplies a write-scoped installation token;
+  // tests and fixtures run against the deterministic GitHub fixture.
+  client: createGithubMutationClient({
+    token: () => Promise.resolve(process.env.GITHUB_WRITE_TOKEN ?? 'ghs_fixture_write_token'),
+  }),
+});
+
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ workspaceId: string }> },
+): Promise<NextResponse> {
+  const requestId = `req_${randomUUID()}`;
+  try {
+    const { workspaceId } = await context.params;
+    const auth = await requireSession(request);
+    const json = await request.json().catch(() => null);
+    const parsed = CreateMutationBody.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parsed.error.issues[0]?.message ?? 'Invalid mutation request',
+            requestId,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const body = parsed.data;
+
+    await withTenant(auth.userId, async (client) => {
+      await assertWorkspaceAccess(client, workspaceId);
+    });
+
+    const result = await enqueueMutationCommand(
+      {
+        userId: auth.userId,
+        workspaceId,
+        runId: body.runId ?? null,
+        idempotencyKey: body.idempotencyKey,
+        approvalId: body.approvalId,
+        repository: body.repository,
+        operation: body.operation,
+        arguments: body.arguments,
+        actorMatrixId: auth.matrixUserId,
+      },
+      { grantStore: databaseWriteGrantStore, approvalService, commandStore, auditStore: databaseAuditStore, worker },
+    );
+
+    return NextResponse.json(
+      {
+        requestId,
+        commandId: result.command.id,
+        status: result.command.status,
+      },
+      { status: result.replayed ? 200 : 202 },
+    );
+  } catch (error) {
+    return toErrorResponse(error, requestId);
+  }
+}

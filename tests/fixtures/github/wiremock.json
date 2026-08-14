@@ -147,6 +147,60 @@
           }
         ]
       }
+    },
+    {
+      "name": "create issue (write)",
+      "request": { "method": "POST", "urlPath": "/repos/acme/widget/issues" },
+      "response": {
+        "status": 201,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "id": 42001,
+          "number": 42,
+          "title": "Issue created by fixture",
+          "state": "open",
+          "html_url": "https://github.example/acme/widget/issues/42",
+          "created_at": "2026-08-12T12:00:00Z"
+        }
+      }
+    },
+    {
+      "name": "update issue (write)",
+      "request": { "method": "PATCH", "urlPath": "/repos/acme/widget/issues/7" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "id": 7001,
+          "number": 7,
+          "state": "closed",
+          "html_url": "https://github.example/acme/widget/issues/7"
+        }
+      }
+    },
+    {
+      "name": "comment on issue (write)",
+      "request": { "method": "POST", "urlPath": "/repos/acme/widget/issues/7/comments" },
+      "response": {
+        "status": 201,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "id": 9001,
+          "html_url": "https://github.example/acme/widget/issues/7#issuecomment-9001"
+        }
+      }
+    },
+    {
+      "name": "comment on pull request (write)",
+      "request": { "method": "POST", "urlPath": "/repos/acme/widget/pulls/11/comments" },
+      "response": {
+        "status": 201,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "id": 9002,
+          "html_url": "https://github.example/acme/widget/pulls/11#discussion_r9002"
+        }
+      }
     }
   ]
 }
