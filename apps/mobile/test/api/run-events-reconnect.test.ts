@@ -200,6 +200,31 @@ describe('mobile run event replay', () => {
     connection.dispose();
   });
 
+  it('rejects malformed terminal envelopes before accepting a valid terminal event', async () => {
+    const missingVisibility = event(10, 'run.completed') as Record<string, unknown>;
+    delete missingVisibility.visibility;
+    const fetch = vi.fn<RunEventsFetch>(async () => response([
+      `id: 9\nevent: run.completed\ndata: ${JSON.stringify({ ...event(9, 'run.completed'), occurredAt: 'not-a-date' })}\n\n`,
+      `id: 10\nevent: run.completed\ndata: ${JSON.stringify(missingVisibility)}\n\n`,
+      `id: 11\nevent: run.completed\ndata: ${JSON.stringify({ ...event(11, 'run.completed'), visibility: 'private' })}\n\n`,
+      `id: 12\nevent: run.completed\ndata: ${JSON.stringify(event(12, 'run.completed'))}\n\n`,
+    ]));
+    const store = createRunStore();
+    const client = createRunEventClient({
+      baseUrl: 'https://control.example.test',
+      sessionStore: { load: async () => ({ cookie: 'opaque-session' }), save: vi.fn(), clear: vi.fn() },
+      store,
+      fetch,
+    });
+
+    const connection = client.connect('run-1');
+    await eventually(() => expect(store.get('run-1').highestSequence).toBe(12));
+
+    expect(store.get('run-1').events).toEqual([event(12, 'run.completed')]);
+    expect(fetch).toHaveBeenCalledOnce();
+    connection.dispose();
+  });
+
   it('isolates runs, ignores malformed events, and retains unknown future event types', () => {
     const store = createRunStore();
     expect(store.addEvent(event(2))).toBe(true);
@@ -213,6 +238,41 @@ describe('mobile run event replay', () => {
       'future.specialist.observed',
     ]);
     expect(store.get('run-2').highestSequence).toBe(1);
+  });
+
+  it('reconnects after session storage fails without expiring authentication', async () => {
+    const scheduled: Array<() => void> = [];
+    const load = vi.fn()
+      .mockRejectedValueOnce(new Error('secure storage unavailable'))
+      .mockResolvedValue({ cookie: 'opaque-session' });
+    const onUnauthorized = vi.fn();
+    const fetch = vi.fn<RunEventsFetch>(async () => response([
+      `id: 1\nevent: run.completed\ndata: ${JSON.stringify(event(1, 'run.completed'))}\n\n`,
+    ]));
+    const store = createRunStore();
+    const client = createRunEventClient({
+      baseUrl: 'https://control.example.test',
+      sessionStore: { load, save: vi.fn(), clear: vi.fn() },
+      store,
+      fetch,
+      onUnauthorized,
+      schedule: (callback) => {
+        scheduled.push(callback);
+        return scheduled.length;
+      },
+      cancelSchedule: vi.fn(),
+    });
+
+    const connection = client.connect('run-1');
+    await eventually(() => expect(scheduled).toHaveLength(1));
+    expect(fetch).not.toHaveBeenCalled();
+    scheduled.shift()?.();
+    await eventually(() => expect(store.get('run-1').highestSequence).toBe(1));
+
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    connection.dispose();
   });
 
   it('uses the shared session-expiry boundary and disposal prevents reconnect', async () => {

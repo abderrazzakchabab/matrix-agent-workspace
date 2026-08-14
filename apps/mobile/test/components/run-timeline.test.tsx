@@ -21,6 +21,7 @@ function add(
     type,
     version: 1,
     occurredAt: `2026-08-12T12:00:0${sequence}.000Z`,
+    visibility: 'room_and_owner',
     payload,
   });
 }

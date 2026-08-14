@@ -5,6 +5,7 @@ export interface NormalizedRunEvent {
   type: string;
   version: number;
   occurredAt: string;
+  visibility: 'room_and_owner';
   payload: Record<string, unknown>;
 }
 
@@ -50,16 +51,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeEvent(candidate: unknown): NormalizedRunEvent | null {
   if (!isRecord(candidate) || !isRecord(candidate.payload)) return null;
-  const { id, runId, sequence, type, version, occurredAt, payload } = candidate;
+  const { id, runId, sequence, type, version, occurredAt, visibility, payload } = candidate;
   if (
     typeof id !== 'string' || id.length === 0
     || typeof runId !== 'string' || runId.length === 0
     || typeof type !== 'string' || type.length === 0
     || typeof sequence !== 'number' || !Number.isSafeInteger(sequence) || sequence < 0
     || typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1
-    || typeof occurredAt !== 'string' || occurredAt.length === 0
+    || typeof occurredAt !== 'string' || Number.isNaN(Date.parse(occurredAt))
+    || visibility !== 'room_and_owner'
   ) return null;
-  return { id, runId, sequence, type, version, occurredAt, payload };
+  return { id, runId, sequence, type, version, occurredAt, visibility, payload };
 }
 
 export function createRunStore(options: { persistence?: RunPersistence } = {}): RunStore {

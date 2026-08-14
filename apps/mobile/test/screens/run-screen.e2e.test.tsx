@@ -21,6 +21,7 @@ function terminal(runId: string, sequence: number, type: string) {
     type,
     version: 1,
     occurredAt: '2026-08-12T12:00:00.000Z',
+    visibility: 'room_and_owner',
     payload: type === 'run.failed'
       ? { code: 'PROVIDER_UNAVAILABLE', detail: 'sensitive provider detail' }
       : {},

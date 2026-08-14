@@ -160,16 +160,18 @@ export function createRunEventClient(options: {
 
       async function open(): Promise<void> {
         if (disposed || terminalReceived) return;
-        const session = await options.sessionStore.load();
-        if (disposed) return;
-        if (!session) {
-          await expireControlPlaneSession(options.sessionStore, options.onUnauthorized);
-          return;
-        }
-        const after = options.store.get(runId).highestSequence;
-        const url = `${baseUrl}/api/runs/${encodeURIComponent(runId)}/events?after=${after}`;
-        abortController = new AbortController();
+        let authenticationExpired = false;
         try {
+          const session = await options.sessionStore.load();
+          if (disposed) return;
+          if (!session) {
+            authenticationExpired = true;
+            await expireControlPlaneSession(options.sessionStore, options.onUnauthorized);
+            return;
+          }
+          const after = options.store.get(runId).highestSequence;
+          const url = `${baseUrl}/api/runs/${encodeURIComponent(runId)}/events?after=${after}`;
+          abortController = new AbortController();
           const response = await fetchImpl(url, {
             method: 'GET',
             credentials: 'include',
@@ -182,6 +184,7 @@ export function createRunEventClient(options: {
           });
           if (disposed) return;
           if (response.status === 401) {
+            authenticationExpired = true;
             await expireControlPlaneSession(options.sessionStore, options.onUnauthorized);
             return;
           }
@@ -205,7 +208,11 @@ export function createRunEventClient(options: {
           }
           if (!disposed && !terminalReceived) queueReconnect();
         } catch (error) {
-          if (!disposed && !(error instanceof Error && error.name === 'AbortError')) queueReconnect();
+          if (
+            !disposed
+            && !authenticationExpired
+            && !(error instanceof Error && error.name === 'AbortError')
+          ) queueReconnect();
         }
       }
 
