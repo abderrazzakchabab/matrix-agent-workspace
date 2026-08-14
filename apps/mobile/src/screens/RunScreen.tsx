@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useSyncExternalStore, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { ControlPlaneApi } from '../api/control-plane';
+import { ControlPlaneError, type ControlPlaneApi } from '../api/control-plane';
 import type { RunEventClient } from '../api/run-events';
 import { RunTimeline } from '../components/RunTimeline';
 import { TerminalResult, terminalEvent } from '../components/TerminalResult';
@@ -18,7 +18,7 @@ interface RunScreenProps {
   matrixDeliveryMarkers?: readonly MatrixDeliveryMarker[];
 }
 
-type CancellationState = 'idle' | 'pending' | 'requested' | 'error';
+type CancellationState = 'idle' | 'pending' | 'requested' | 'terminal_pending' | 'error';
 
 const MATRIX_DELIVERY_POLL_MS = 1_000;
 
@@ -92,13 +92,20 @@ export function RunScreen({
     try {
       await controlPlane.cancelRun(runId);
       setCancellation('requested');
-    } catch {
-      setCancellation('error');
+    } catch (error) {
+      setCancellation(
+        error instanceof ControlPlaneError && error.code === 'RUN_ALREADY_TERMINAL'
+          ? 'terminal_pending'
+          : 'error',
+      );
     }
   }
 
   const cancelLabel = cancellation === 'error' ? 'Retry cancellation' : 'Cancel run';
-  const cancelDisabled = cancellation === 'pending' || cancellation === 'requested' || terminal !== null;
+  const cancelDisabled = cancellation === 'pending'
+    || cancellation === 'requested'
+    || cancellation === 'terminal_pending'
+    || terminal !== null;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -115,10 +122,13 @@ export function RunScreen({
         <RunTimeline run={run} mode={mode} specialistNames={specialistNames} />
         <TerminalResult run={run} />
 
-        {cancellation === 'requested' ? (
+        {!terminal && cancellation === 'requested' ? (
           <Text role="status" style={styles.requested}>Cancellation requested</Text>
         ) : null}
-        {cancellation === 'error' ? (
+        {!terminal && cancellation === 'terminal_pending' ? (
+          <Text role="status" style={styles.requested}>Run finished. Loading final result.</Text>
+        ) : null}
+        {!terminal && cancellation === 'error' ? (
           <Text role="alert" style={styles.error}>
             Unable to request cancellation. Check your connection and retry.
           </Text>

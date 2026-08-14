@@ -175,6 +175,31 @@ describe('mobile run event replay', () => {
     connection.dispose();
   });
 
+  it('rejects conflicting wire and body types before accepting a valid terminal event', async () => {
+    const fetch = vi.fn<RunEventsFetch>(async () => response([
+      `id: 9\nevent: run.completed\ndata: ${JSON.stringify(event(9, 'specialist.progress'))}\n\n`,
+      `id: 10\nevent: run.completed\ndata: ${JSON.stringify(event(10, 'run.completed'))}\n\n`,
+    ]));
+    const store = createRunStore();
+    const client = createRunEventClient({
+      baseUrl: 'https://control.example.test',
+      sessionStore: { load: async () => ({ cookie: 'opaque-session' }), save: vi.fn(), clear: vi.fn() },
+      store,
+      fetch,
+    });
+
+    const connection = client.connect('run-1');
+    await eventually(() => expect(store.get('run-1').highestSequence).toBe(10));
+
+    expect(store.get('run-1').events).toHaveLength(1);
+    expect(store.get('run-1').events[0]).toMatchObject({
+      sequence: 10,
+      type: 'run.completed',
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+    connection.dispose();
+  });
+
   it('isolates runs, ignores malformed events, and retains unknown future event types', () => {
     const store = createRunStore();
     expect(store.addEvent(event(2))).toBe(true);

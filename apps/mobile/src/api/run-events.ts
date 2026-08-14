@@ -79,9 +79,12 @@ function eventFromFrame(frame: SseFrame, expectedRunId: string): Record<string, 
     const record = body as Record<string, unknown>;
     if (record.runId !== expectedRunId) return null;
     if (record.sequence !== undefined && record.sequence !== sequence) return null;
-    const type = frame.event || record.type;
-    if (typeof type !== 'string' || !type) return null;
-    return { ...record, sequence, type };
+    if (
+      frame.event === null
+      || typeof record.type !== 'string'
+      || frame.event !== record.type
+    ) return null;
+    return { ...record, sequence };
   } catch {
     return null;
   }

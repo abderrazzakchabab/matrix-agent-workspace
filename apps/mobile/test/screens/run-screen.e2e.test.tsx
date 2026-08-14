@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { RunScreen } from '../../src/screens/RunScreen';
 import { createRunStore } from '../../src/state/run-store';
 import type { RunEventClient } from '../../src/api/run-events';
+import { ControlPlaneError } from '../../src/api/control-plane';
 
 vi.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -66,7 +67,37 @@ describe('RunScreen flow', () => {
       expect(screen.getAllByText('Delivered to Matrix')).toHaveLength(1);
     });
     expect(getRunMatrixDeliveries).toHaveBeenCalledWith('run-1');
-    expect(screen.getAllByRole('status')).toHaveLength(2); // cancellation request + terminal result
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+  });
+
+  it('treats an already-terminal cancellation race as pending until replay arrives', async () => {
+    const store = createRunStore();
+    const cancelRun = vi.fn(async () => {
+      throw new ControlPlaneError('Run is already completed', 409, 'RUN_ALREADY_TERMINAL');
+    });
+    const screen = render(
+      <RunScreen
+        runId="run-3"
+        mode="parallel"
+        specialistIds={['repo-reader']}
+        specialistNames={{ 'repo-reader': 'Repository reader' }}
+        store={store}
+        eventClient={{ connect: () => ({ dispose: vi.fn() }) }}
+        controlPlane={{
+          cancelRun,
+          getRunMatrixDeliveries: async () => ({ runId: 'run-3', deliveries: [] }),
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
+    expect(await screen.findByText('Run finished. Loading final result.')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    expect(store.addEvent(terminal('run-3', 4, 'run.completed'))).toBe(true);
+    await waitFor(() => expect(screen.getByLabelText('Run Completed')).toBeTruthy());
+    expect(screen.queryByText('Run finished. Loading final result.')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('offers a safe retry when cancellation fails and never exposes raw failure detail', async () => {
@@ -99,6 +130,7 @@ describe('RunScreen flow', () => {
 
     store.addEvent(terminal('run-2', 3, 'run.failed'));
     await waitFor(() => expect(screen.getByText('Code: PROVIDER_UNAVAILABLE')).toBeTruthy());
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText(/sensitive provider detail/)).toBeNull();
   });
 });
