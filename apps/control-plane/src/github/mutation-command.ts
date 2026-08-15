@@ -267,7 +267,7 @@ export class InMemoryMutationCommandStore implements MutationCommandStore {
     providerResult: Record<string, unknown>,
   ): Promise<MutationCommand | null> {
     const row = this.rows.get(commandId);
-    if (!row) return null;
+    if (!row || row.status !== 'queued') return null;
     const updated: MutationCommand = {
       ...row,
       status: 'completed',
@@ -454,6 +454,7 @@ export function createDatabaseMutationCommandStore(
                   ${GITHUB_MUTATION_COMMANDS.errorCode} = NULL,
                   ${GITHUB_MUTATION_COMMANDS.updatedAt} = now()
             WHERE ${GITHUB_MUTATION_COMMANDS.id} = $1
+              AND ${GITHUB_MUTATION_COMMANDS.status} = 'queued'
             RETURNING *`,
           [commandId, JSON.stringify(providerResult)],
         );

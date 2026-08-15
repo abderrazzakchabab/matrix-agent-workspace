@@ -110,6 +110,49 @@ function failOnce<T extends object>(store: T, method: keyof T): T {
   });
 }
 
+/**
+ * Wraps a store so concurrent readers of the same command all observe the
+ * pre-race state before any of them finalizes it, and both finalizers then
+ * race — the interleaving a real database shows under two concurrent
+ * same-key replays. Gates are one-shot: later calls (e.g. the losing
+ * finalizer re-fetching the winner's state) pass through immediately.
+ */
+function concurrentBarrierStore(store: MutationCommandStore): MutationCommandStore {
+  const released = new Set<string>();
+  const queues = new Map<string, Array<() => void>>();
+  function gate(method: string, n: number): Promise<void> {
+    if (released.has(method)) return Promise.resolve();
+    return new Promise((resolve) => {
+      const queue = queues.get(method) ?? [];
+      queue.push(resolve);
+      queues.set(method, queue);
+      if (queue.length >= n) {
+        released.add(method);
+        queues.delete(method);
+        for (const release of queue) release();
+      }
+    });
+  }
+  return new Proxy(store, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (prop === 'getCommand') {
+        return async (commandId: string) => {
+          await gate('getCommand', 2);
+          return Reflect.apply(value, target, [commandId]);
+        };
+      }
+      if (prop === 'markCompleted') {
+        return async (commandId: string, providerResult: Record<string, unknown>) => {
+          await gate('markCompleted', 2);
+          return Reflect.apply(value, target, [commandId, providerResult]);
+        };
+      }
+      return value;
+    },
+  });
+}
+
 let fixture: GithubFixture;
 
 beforeAll(async () => {
@@ -294,5 +337,70 @@ describe('GitHub mutation command idempotency', () => {
     // Worker retry: still no new audit rows.
     await deps.worker?.process(command.id);
     expect((await deps.auditStore.list({ workspaceId: 'workspace-a' })).items).toHaveLength(before);
+  });
+
+  it('finalizes a crashed command exactly once under concurrent duplicate replays', async () => {
+    fixture.reset();
+    const { deps, commandStore, approvalId } = await setup(fixture, { worker: false });
+    const input = commandInput({ approvalId, idempotencyKey: 'concurrent_recovery_key' });
+
+    // Crash after the provider result is persisted (markCompleted throws once),
+    // leaving the command queued with a stored provider result.
+    const crashing = failOnce<MutationCommandStore>(commandStore, 'markCompleted');
+    const crashingWorker = createMutationWorker({
+      commandStore: crashing,
+      grantStore: deps.grantStore,
+      approvalService: deps.approvalService,
+      auditStore: deps.auditStore,
+      client: createGithubMutationClient({
+        baseUrl: fixture.baseUrl,
+        token: 'ghs_fixture_write_token',
+      }),
+      now: deps.now,
+    });
+    const { command } = await enqueueMutationCommand(input, { ...deps, worker: null });
+    await expect(crashingWorker.process(command.id)).rejects.toThrow(/simulated crash/);
+    const afterCrash = await deps.commandStore.getCommand(command.id);
+    expect(afterCrash?.status).toBe('queued');
+    expect(afterCrash?.providerResult).toMatchObject({ issueNumber: 42 });
+    expect(fixture.state().mutationRequests).toHaveLength(1);
+
+    // Two concurrent duplicate replays both read the queued-with-result state
+    // before either finalizes it, then race to complete the command.
+    const healthyWorker = createMutationWorker({
+      commandStore: concurrentBarrierStore(deps.commandStore),
+      grantStore: deps.grantStore,
+      approvalService: deps.approvalService,
+      auditStore: deps.auditStore,
+      client: createGithubMutationClient({
+        baseUrl: fixture.baseUrl,
+        token: 'ghs_fixture_write_token',
+      }),
+      now: deps.now,
+    });
+    const recoverDeps: EnqueueMutationDeps = { ...deps, worker: healthyWorker };
+    const [first, second] = await Promise.all([
+      enqueueMutationCommand(input, recoverDeps),
+      enqueueMutationCommand(input, recoverDeps),
+    ]);
+
+    expect(first.replayed).toBe(true);
+    expect(second.replayed).toBe(true);
+    expect(first.command.id).toBe(command.id);
+    expect(second.command.id).toBe(command.id);
+    expect(first.command.status).toBe('completed');
+    expect(second.command.status).toBe('completed');
+
+    const final = await deps.commandStore.getCommand(command.id);
+    expect(final?.status).toBe('completed');
+    expect(final?.attempts).toBe(1);
+
+    // Exactly one provider mutation and exactly one completion audit row.
+    expect(fixture.state().mutationRequests).toHaveLength(1);
+    const audits = (await deps.auditStore.list({ workspaceId: 'workspace-a' })).items;
+    const completedAudits = audits.filter(
+      (row) => row.commandId === command.id && row.outcome === 'completed',
+    );
+    expect(completedAudits).toHaveLength(1);
   });
 });
