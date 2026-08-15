@@ -21,6 +21,8 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 - **Phase C mobile workspace** (`apps/mobile/src/screens/GitHubWorkspaceScreen.tsx` + `components/GitHubReadPanel|MutationConfirmation|AuditHistory`): reached from the Run screen header (`GitHubWorkspace` route) with `workspaceId`/`runId` from navigator state; the installation id comes from `EXPO_PUBLIC_GITHUB_INSTALLATION_ID` (no list-installations endpoint exists). The client recomputes the server command hash (canonical JSON key sort + SHA-256 via expo-crypto) and retries reuse the same idempotency key per argument fingerprint. Fixture sharp edges: the wiremock issues page 2 advertises a dangling `next` link and page 3 404s, so cursor-following clients must treat a failed follow-up page as end-of-pagination; the mobile e2e (`test/screens/github-workspace.e2e.tsx`) is outside the committed `playwright.config.ts` `testMatch` (`*.spec.ts`) until Task 13 and needs a testMatch override plus `EXPO_PUBLIC_GITHUB_INSTALLATION_ID=42`; mobile-imported fixture helpers must stay free of control-plane `src/` imports (the mobile `tsc` program type-checks them and fails on `process.env`-any constructs).
 
+## Maintaining this file
+
 Keep this file for knowledge useful to almost every future agent session in this project.
 Do not repeat what the codebase already shows; point to the authoritative file or command instead.
 Prefer rewriting or pruning existing entries over appending new ones.
