@@ -66,6 +66,91 @@ export interface RunMatrixDeliveriesResponse {
   deliveries: Array<{ sequence: number; status: MatrixDeliveryStatus }>;
 }
 
+export type GithubWriteScope = 'issues:write' | 'pull_requests:write';
+
+export type GithubMutationOperation =
+  | 'create_issue'
+  | 'update_issue'
+  | 'comment_issue'
+  | 'create_pr_comment';
+
+export interface GithubPage<T> {
+  items: T[];
+  nextCursor?: string;
+}
+
+export interface GithubRepositorySummary {
+  id: number;
+  name: string;
+  fullName: string;
+  owner: string;
+  private: boolean;
+  defaultBranch: string;
+  description: string | null;
+  htmlUrl: string;
+  archived: boolean;
+}
+
+export interface GithubIssueSummary {
+  id: number;
+  number: number;
+  title: string;
+  state: string;
+  author: string | null;
+  labels: string[];
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GithubPullRequestSummary {
+  id: number;
+  number: number;
+  title: string;
+  state: string;
+  draft: boolean;
+  author: string | null;
+  head: string;
+  base: string;
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GithubWriteGrantResult {
+  grantId: string;
+  status: 'pending' | 'approved' | 'revoked';
+  repository: string;
+  scope: GithubWriteScope;
+}
+
+export interface RunApprovalResult {
+  approvalId: string;
+  status: 'approved' | 'denied';
+  expiresAt: string;
+  scope: GithubWriteScope;
+}
+
+export interface GithubMutationResult {
+  commandId: string;
+  status: 'queued' | 'completed' | 'failed';
+  /** True when the idempotency key was already processed (HTTP 200 replay). */
+  replayed: boolean;
+}
+
+export interface AuditRecordItem {
+  id: string;
+  actorMatrixId: string | null;
+  scope: string | null;
+  repository: string | null;
+  operation: string | null;
+  approvalId: string | null;
+  commandId: string | null;
+  outcome: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface ControlPlaneApi {
   createMatrixSession(homeserverUrl: string, accessToken: string): Promise<MatrixSessionResponse>;
   createWorkspace(name: string): Promise<WorkspaceSelection>;
@@ -78,6 +163,54 @@ export interface ControlPlaneApi {
   ): Promise<RunResponseType>;
   cancelRun(runId: string): Promise<CancellationResponse>;
   getRunMatrixDeliveries(runId: string): Promise<RunMatrixDeliveriesResponse>;
+  listGithubRepositories(input: {
+    workspaceId: string;
+    installationId: string;
+    cursor?: string;
+  }): Promise<GithubPage<GithubRepositorySummary>>;
+  listGithubIssues(input: {
+    workspaceId: string;
+    installationId: string;
+    owner: string;
+    repo: string;
+    cursor?: string;
+  }): Promise<GithubPage<GithubIssueSummary>>;
+  listGithubPullRequests(input: {
+    workspaceId: string;
+    installationId: string;
+    owner: string;
+    repo: string;
+    cursor?: string;
+  }): Promise<GithubPage<GithubPullRequestSummary>>;
+  requestGithubWriteGrant(
+    workspaceId: string,
+    repository: string,
+    scope: GithubWriteScope,
+  ): Promise<GithubWriteGrantResult>;
+  createRunApproval(
+    runId: string,
+    input: {
+      scope: GithubWriteScope;
+      decision: 'approved' | 'denied';
+      confirmationText: string;
+      commandHash: string;
+    },
+  ): Promise<RunApprovalResult>;
+  enqueueGithubMutation(
+    workspaceId: string,
+    input: {
+      idempotencyKey: string;
+      approvalId: string;
+      repository: string;
+      runId?: string;
+      operation: GithubMutationOperation;
+      arguments: Record<string, unknown>;
+    },
+  ): Promise<GithubMutationResult>;
+  listAuditRecords(
+    workspaceId: string,
+    cursor?: string,
+  ): Promise<GithubPage<AuditRecordItem>>;
 }
 
 interface ApiErrorBody {
@@ -135,10 +268,10 @@ export function createControlPlaneClient(options: {
     await expireControlPlaneSession(options.sessionStore, options.onUnauthorized);
   }
 
-  async function authenticatedRequest<T>(path: string, init?: {
+  async function authenticatedRaw(path: string, init?: {
     method?: string;
     body?: unknown;
-  }): Promise<T> {
+  }): Promise<FetchResponse> {
     const session = await options.sessionStore.load();
     if (!session) {
       await invalidateSession();
@@ -155,7 +288,25 @@ export function createControlPlaneClient(options: {
       body: init?.body === undefined ? undefined : JSON.stringify(init.body),
     });
     if (response.status === 401) await invalidateSession();
-    return readResponse<T>(response);
+    return response;
+  }
+
+  async function authenticatedRequest<T>(path: string, init?: {
+    method?: string;
+    body?: unknown;
+  }): Promise<T> {
+    return readResponse<T>(await authenticatedRaw(path, init));
+  }
+
+  function githubReadPath(
+    workspaceId: string,
+    installationId: string,
+    suffix: string,
+    cursor?: string,
+  ): string {
+    const params = new URLSearchParams({ workspaceId, installationId });
+    if (cursor) params.set('cursor', cursor);
+    return `${suffix}?${params.toString()}`;
   }
 
   return {
@@ -231,6 +382,88 @@ export function createControlPlaneClient(options: {
         matrixDeliveries: RunMatrixDeliveriesResponse['deliveries'];
       }>(`/api/runs/${encodeURIComponent(runId)}`);
       return { runId: body.runId, deliveries: body.matrixDeliveries };
+    },
+
+    async listGithubRepositories({ workspaceId, installationId, cursor }) {
+      return authenticatedRequest<GithubPage<GithubRepositorySummary>>(
+        githubReadPath(workspaceId, installationId, '/api/github/repositories', cursor),
+      );
+    },
+
+    async listGithubIssues({ workspaceId, installationId, owner, repo, cursor }) {
+      return authenticatedRequest<GithubPage<GithubIssueSummary>>(
+        githubReadPath(
+          workspaceId,
+          installationId,
+          `/api/github/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`,
+          cursor,
+        ),
+      );
+    },
+
+    async listGithubPullRequests({ workspaceId, installationId, owner, repo, cursor }) {
+      return authenticatedRequest<GithubPage<GithubPullRequestSummary>>(
+        githubReadPath(
+          workspaceId,
+          installationId,
+          `/api/github/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`,
+          cursor,
+        ),
+      );
+    },
+
+    async requestGithubWriteGrant(workspaceId, repository, scope) {
+      return authenticatedRequest<GithubWriteGrantResult>(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/github-grants`,
+        { method: 'POST', body: { repository, scope } },
+      );
+    },
+
+    async createRunApproval(runId, input) {
+      return authenticatedRequest<RunApprovalResult>(
+        `/api/runs/${encodeURIComponent(runId)}/approvals`,
+        {
+          method: 'POST',
+          body: {
+            approvalType: 'github_mutation',
+            scope: input.scope,
+            decision: input.decision,
+            confirmationText: input.confirmationText,
+            commandHash: input.commandHash,
+          },
+        },
+      );
+    },
+
+    async enqueueGithubMutation(workspaceId, input) {
+      const response = await authenticatedRaw(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/github/mutations`,
+        {
+          method: 'POST',
+          body: {
+            idempotencyKey: input.idempotencyKey,
+            approvalId: input.approvalId,
+            repository: input.repository,
+            ...(input.runId === undefined ? {} : { runId: input.runId }),
+            operation: input.operation,
+            arguments: input.arguments,
+          },
+        },
+      );
+      const body = await readResponse<{ commandId: string; status: GithubMutationResult['status'] }>(
+        response,
+      );
+      // 202 = newly queued command; 200 = idempotent replay of the same key.
+      return { commandId: body.commandId, status: body.status, replayed: response.status === 200 };
+    },
+
+    async listAuditRecords(workspaceId, cursor) {
+      const params = new URLSearchParams();
+      if (cursor) params.set('cursor', cursor);
+      const suffix = params.size > 0 ? `?${params.toString()}` : '';
+      return authenticatedRequest<GithubPage<AuditRecordItem>>(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/audit${suffix}`,
+      );
     },
   };
 }

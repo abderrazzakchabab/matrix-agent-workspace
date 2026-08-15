@@ -14,6 +14,8 @@ The implementation plan is at `docs/superpowers/plans/2026-08-12-matrix-agent-wo
 
 The Expo client supports Matrix login, workspace creation, explicit room-to-workspace binding, and launching and monitoring parallel or sequential specialist runs. The run screen replays durable progress, supports cancellation through the terminal event, renders completed, partial, failed, and cancelled results, and confirms delivery to Matrix without duplicating the result. The client stores only the opaque control-plane session reference in the platform secure store; the Matrix access token is used only during login.
 
+From the run screen, the GitHub workspace header action opens the collaboration workspace: read-only repository, issue, and pull-request panels, a mutation control that appears only while a write grant for the exact repository and scope is pending or approved, an explicit confirmation showing the scope, repository, and normalized arguments before any write (approval is never inferred from opening the screen), idempotent mutation submission with visible command status, and a redacted audit history. Set `EXPO_PUBLIC_GITHUB_INSTALLATION_ID` to the GitHub App installation the workspace should read through.
+
 From the repository root, start the control plane and Expo in separate terminals:
 
 ```sh
