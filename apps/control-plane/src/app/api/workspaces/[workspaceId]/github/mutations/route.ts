@@ -67,17 +67,61 @@ const commandStore: MutationCommandStore = createDatabaseMutationCommandStore(
 
 const approvalService = createApprovalService({ store: databaseApprovalStore });
 
+// The production deployment supplies a write-scoped installation token;
+// tests and fixtures run against the deterministic GitHub fixture.
+const mutationClient = createGithubMutationClient({
+  token: () => Promise.resolve(process.env.GITHUB_WRITE_TOKEN ?? 'ghs_fixture_write_token'),
+});
+
 const worker: MutationWorker = createMutationWorker({
   commandStore,
   grantStore: databaseWriteGrantStore,
   approvalService,
   auditStore: databaseAuditStore,
-  // The production deployment supplies a write-scoped installation token;
-  // tests and fixtures run against the deterministic GitHub fixture.
-  client: createGithubMutationClient({
-    token: () => Promise.resolve(process.env.GITHUB_WRITE_TOKEN ?? 'ghs_fixture_write_token'),
-  }),
+  client: mutationClient,
 });
+
+/**
+ * Test-only deterministic crash control (enabled by PHASE_C_FIXTURE_MODE):
+ * the first request whose idempotency key carries the marker runs a worker
+ * that persists the provider result and then crashes before acknowledging
+ * the command, simulating a worker crash between provider response and ack.
+ * One-shot per key per server process, so the idempotent retry uses the
+ * healthy worker and resumes from the persisted provider result.
+ */
+const CRASH_AFTER_PROVIDER_MARKER = '[fixture:crash-after-provider]';
+const crashedFixtureKeys = new Set<string>();
+
+function workerForRequest(idempotencyKey: string): MutationWorker {
+  if (
+    process.env.PHASE_C_FIXTURE_MODE !== '1' ||
+    !idempotencyKey.includes(CRASH_AFTER_PROVIDER_MARKER) ||
+    crashedFixtureKeys.has(idempotencyKey)
+  ) {
+    return worker;
+  }
+  crashedFixtureKeys.add(idempotencyKey);
+  let armed = true;
+  const crashingStore: MutationCommandStore = new Proxy(commandStore, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (property === 'markCompleted' && armed) {
+        armed = false;
+        return async () => {
+          throw new Error('simulated Phase C mutation worker crash after provider result');
+        };
+      }
+      return value;
+    },
+  });
+  return createMutationWorker({
+    commandStore: crashingStore,
+    grantStore: databaseWriteGrantStore,
+    approvalService,
+    auditStore: databaseAuditStore,
+    client: mutationClient,
+  });
+}
 
 export async function POST(
   request: NextRequest,
@@ -142,7 +186,13 @@ export async function POST(
         arguments: body.arguments,
         actorMatrixId: auth.matrixUserId,
       },
-      { grantStore: databaseWriteGrantStore, approvalService, commandStore, auditStore: databaseAuditStore, worker },
+      {
+        grantStore: databaseWriteGrantStore,
+        approvalService,
+        commandStore,
+        auditStore: databaseAuditStore,
+        worker: workerForRequest(body.idempotencyKey),
+      },
     );
 
     return NextResponse.json(
