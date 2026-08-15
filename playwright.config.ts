@@ -94,6 +94,7 @@ const fixtureEnv: Record<string, string> = {
   INNGEST_EVENT_KEY: process.env.INNGEST_EVENT_KEY ?? 'phase-b-fixture-event-key',
   PHASE_B_FIXTURE_MODE: process.env.PHASE_B_FIXTURE_MODE ?? '1',
   PHASE_A_FIXTURE_MODE: process.env.PHASE_A_FIXTURE_MODE ?? '1',
+  PHASE_C_FIXTURE_MODE: process.env.PHASE_C_FIXTURE_MODE ?? '1',
   SSE_POLL_INTERVAL_MS: process.env.SSE_POLL_INTERVAL_MS ?? '25',
   SSE_HEARTBEAT_INTERVAL_MS: process.env.SSE_HEARTBEAT_INTERVAL_MS ?? '100',
 };
@@ -128,6 +129,10 @@ export default defineConfig({
         CI: '1',
         EXPO_PUBLIC_CONTROL_PLANE_URL: fixtureEnv.CONTROL_PLANE_URL,
         EXPO_PUBLIC_PHASE_A_FIXTURE_MODE: '1',
+        // The Phase C collaboration workspace reads its GitHub App
+        // installation from this public variable (fixture installation 42).
+        EXPO_PUBLIC_GITHUB_INSTALLATION_ID:
+          process.env.EXPO_PUBLIC_GITHUB_INSTALLATION_ID ?? '42',
       },
     },
   ],

@@ -267,7 +267,7 @@ export class InMemoryMutationCommandStore implements MutationCommandStore {
     providerResult: Record<string, unknown>,
   ): Promise<MutationCommand | null> {
     const row = this.rows.get(commandId);
-    if (!row) return null;
+    if (!row || row.status !== 'queued') return null;
     const updated: MutationCommand = {
       ...row,
       status: 'completed',
@@ -454,6 +454,7 @@ export function createDatabaseMutationCommandStore(
                   ${GITHUB_MUTATION_COMMANDS.errorCode} = NULL,
                   ${GITHUB_MUTATION_COMMANDS.updatedAt} = now()
             WHERE ${GITHUB_MUTATION_COMMANDS.id} = $1
+              AND ${GITHUB_MUTATION_COMMANDS.status} = 'queued'
             RETURNING *`,
           [commandId, JSON.stringify(providerResult)],
         );
@@ -829,7 +830,10 @@ export interface EnqueueMutationResult {
  * Enqueue a mutation command. A duplicate idempotency key returns the
  * existing command/result immediately — even after the approval TTL or grant
  * revocation — because the command was already gated at first enqueue and the
- * worker re-checks both gates right before the provider call. For new
+ * worker re-checks both gates right before the provider call. One exception:
+ * a command whose worker crashed after the provider result was persisted
+ * (queued with a stored result) is finalized from that stored result on
+ * replay, so a crash never causes a second provider mutation. For new
  * commands the repository shape, operation/arguments, the repository+scope
  * write grant, and the exact unexpired approval are checked in order before
  * anything is inserted. Audit rows record queueing, completion, failure, and
@@ -849,7 +853,17 @@ export async function enqueueMutationCommand(
     workspaceId: input.workspaceId,
     idempotencyKey: input.idempotencyKey,
   });
-  if (existing) return { command: existing, replayed: true };
+  if (existing) {
+    // Crash recovery on replay: the provider result was persisted before the
+    // crash, so the worker finalizes from the stored result without issuing
+    // another provider mutation. A completed command (or one still queued
+    // with no provider result) is returned as recorded.
+    if (existing.status === 'queued' && existing.providerResult && deps.worker) {
+      const resumed = await deps.worker.process(existing.id);
+      return { command: resumed ?? existing, replayed: true };
+    }
+    return { command: existing, replayed: true };
+  }
 
   try {
     await authorizeWriteScope(

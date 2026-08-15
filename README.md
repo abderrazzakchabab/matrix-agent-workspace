@@ -30,13 +30,14 @@ For a physical device, replace `localhost` with a control-plane URL reachable fr
 
 ## Phase gates
 
-The deterministic acceptance stack requires Docker and exposes PostgreSQL/pgvector, Synapse, model-provider, GitHub, and Inngest fixtures. Playwright starts the Next.js control plane for the Phase B gate, and the control plane plus the Expo web build for the Phase A mobile gate.
+The deterministic acceptance stack requires Docker and exposes PostgreSQL/pgvector, Synapse, model-provider, GitHub, and Inngest fixtures. Playwright starts the Next.js control plane for the Phase B gate, and the control plane plus the Expo web build for the Phase A and Phase C gates.
 
 ```sh
 pnpm test:fixtures:up      # start fixtures and seed alice/bob plus #alice:example.test
 pnpm test:fixtures:health  # verify every fixture is healthy
 pnpm test:phase-b          # start fixtures and run the Phase B Playwright/API gate
 pnpm exec playwright test apps/mobile/test/e2e/phase-a-mobile.spec.ts   # Phase A mobile gate (fixtures must be up)
+pnpm exec playwright test apps/control-plane/test/e2e/phase-c-github-writes.spec.ts apps/mobile/test/e2e/phase-c-workspace.spec.ts  # Phase C mutation gate (fixtures must be up)
 pnpm test:fixtures:down    # stop and remove fixture containers
 ```
 

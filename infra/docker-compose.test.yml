@@ -82,11 +82,14 @@ services:
   inngest:
     image: inngest/inngest@sha256:0ad9d99466d3a6e0141bc2eea5834eb3f334500b5097d757c82d228d37efa884
     container_name: matrix-test-inngest
+    # CONTROL_PLANE_PORT selects the host port the control plane dev server
+    # listens on; it defaults to 3000 and only needs overriding when a
+    # foreign process occupies that port on the fixture host.
     command:
       - inngest
       - dev
       - --sdk-url
-      - http://host.docker.internal:3000/api/inngest
+      - http://host.docker.internal:${CONTROL_PLANE_PORT:-3000}/api/inngest
       - --poll-interval
       - '1'
       - --retry-interval

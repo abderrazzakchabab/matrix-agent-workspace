@@ -100,6 +100,7 @@ export function createMutationWorker(deps: MutationWorkerDeps): MutationWorker {
       // finalize the command from the stored result without a provider call.
       if (command.providerResult) {
         const completed = await deps.commandStore.markCompleted(commandId, command.providerResult);
+        if (!completed) return deps.commandStore.getCommand(commandId);
         await deps.auditStore
           .record({
             workspaceId: command.workspaceId,
@@ -189,6 +190,7 @@ export function createMutationWorker(deps: MutationWorkerDeps): MutationWorker {
       // these two writes is recovered by the idempotent branch above.
       await deps.commandStore.persistProviderResult(commandId, providerResult);
       const completed = await deps.commandStore.markCompleted(commandId, providerResult);
+      if (!completed) return deps.commandStore.getCommand(commandId);
       await deps.auditStore
         .record({
           workspaceId: command.workspaceId,
